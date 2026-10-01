@@ -225,9 +225,7 @@ PY
           fi
 
           if [ "$fstype" = erofs ]; then
-            if command -v extract.erofs >/dev/null 2>&1; then
-              extract.erofs "$img" "$out/rootfs" || true
-            elif command -v fsck.erofs >/dev/null 2>&1; then
+            if command -v fsck.erofs >/dev/null 2>&1; then
               mkdir -p "$out/rootfs"
               fsck.erofs --extract="$out/rootfs" "$img" || true
             fi
@@ -313,7 +311,7 @@ PY
             echo "# Beryl recovery configuration analysis"
             echo
             echo "## fstab files"
-            find analysis/work/fs -type f -iname 'fstab*' -o -path '*/etc/fstab*' |
+            find analysis/work/fs -type f \( -iname 'fstab*' -o -path '*/etc/fstab*' \) |
               sort -u |
               while IFS= read -r f; do
                 echo
@@ -345,7 +343,7 @@ PY
 
             echo
             echo "## Crypto-related strings in extracted configuration"
-            grep -RniE '(fileencryption|metadata_encryption|keydirectory|wrappedkey|fscrypt|keymint|keymaster|keystore2|gatekeeper|vold|avb)'               analysis/work/fs 2>/dev/null | head -n 3000 || true
+            grep -RniE '(fileencryption|metadata_encryption|keydirectory|wrappedkey|fscrypt|keymint|keymaster|keystore2|gatekeeper|vold|avb)' analysis/work/fs 2>/dev/null | head -n 3000 || true
           } > analysis/report/08-recovery-config-analysis.md
 
       - name: Static FBE and keymaster inventory
@@ -466,6 +464,9 @@ EOF
             analysis/report/04-recovery-analysis.md \
             analysis/report/05-kernel-modules.md \
             analysis/report/vendor_ramdisk_files.txt \
+            analysis/report/06-filesystem-inventory.md \
+            analysis/report/07-module-crypto-analysis.md \
+            analysis/report/08-recovery-config-analysis.md \
             --repo "$GITHUB_REPOSITORY" \
             --title "Beryl OFOX16 Stock Recovery Analysis" \
             --notes "Static analysis of stock Beryl Android 16 images for OrangeFox recovery development."
