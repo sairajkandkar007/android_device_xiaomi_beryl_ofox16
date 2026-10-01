@@ -97,7 +97,7 @@ jobs:
 
           while IFS= read -r module; do
             case "$module" in
-              ""|#*) continue ;;
+              ""|"#"*) continue ;;
             esac
             src=$(find work/vendor_dlkm -type f -name "$module" -print -quit || true)
             if [ -z "$src" ]; then
