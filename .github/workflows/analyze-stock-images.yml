@@ -24,7 +24,7 @@ jobs:
       - name: Install analysis tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y android-sdk-libsparse-utils android-sdk-ext4-utils cpio file lz4 zstd unzip e2fsprogs erofs-utils binutils xxd
+          sudo apt-get install -y android-sdk-libsparse-utils cpio file lz4 zstd unzip e2fsprogs erofs-utils binutils xxd
 
       - name: Download all release assets
         env:
