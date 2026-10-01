@@ -353,28 +353,16 @@ jobs:
             Values should be selected only after reviewing the generated evidence.
           EOF
 
-      - name: Package analysis
-        run: |
-          tar -C analysis -czf beryl-ofox16-stock-analysis.tar.gz report work images
-          sha256sum beryl-ofox16-stock-analysis.tar.gz | tee analysis/report/SHA256SUMS
-
-      - name: Publish analysis release
+      - name: Publish text reports
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: beryl-ofox16-analysis
         run: |
+          set -e
           gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes || true
           gh release create "$TAG" \
-            beryl-ofox16-stock-analysis.tar.gz \
-            analysis/report/01-image-inventory.md \
-            analysis/report/02-fbe-keymaster-inventory.txt \
-            analysis/report/03-fstab-candidates.txt \
-            analysis/report/04-recovery-analysis.md \
-            analysis/report/05-kernel-modules.md \
-            analysis/report/vendor_ramdisk_files.txt \
-            analysis/report/06-filesystem-inventory.md \
-            analysis/report/07-module-crypto-analysis.md \
-            analysis/report/08-recovery-config-analysis.md \
+            analysis/report/*.md \
+            analysis/report/*.txt \
             --repo "$GITHUB_REPOSITORY" \
             --title "Beryl OFOX16 Stock Recovery Analysis" \
-            --notes "Static analysis of stock Beryl Android 16 images for OrangeFox recovery development."
+            --notes "Static text/Markdown analysis reports for Beryl Android 16 OrangeFox recovery development."
