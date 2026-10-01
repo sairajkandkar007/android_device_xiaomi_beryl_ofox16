@@ -26,14 +26,17 @@ jobs:
       - name: Enable Git LFS
         run: |
           git lfs install
-          git lfs track "prebuilt/vendor_boot.img" "prebuilt/kernel" "prebuilt/dtb.img" "prebuilt/dtbo.img" "prebuilt/modules/*.ko
-prebuilt/sepolicy/vendor_sepolicy.cil
-prebuilt/bootctrl/android.hardware.boot-service.mtk"
-          git add .gitattributes
+          git lfs track "prebuilt/vendor_boot.img"
+          git lfs track "prebuilt/kernel"
+          git lfs track "prebuilt/dtb.img"
+          git lfs track "prebuilt/dtbo.img"
+          git lfs track "prebuilt/modules/*.ko"
+          git lfs track "prebuilt/sepolicy/vendor_sepolicy.cil"
+          git lfs track "prebuilt/bootctrl/android.hardware.boot-service.mtk"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Download required stock images
+      - name: Download stock boot/vendor images
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.release_tag }}
@@ -41,78 +44,112 @@ prebuilt/bootctrl/android.hardware.boot-service.mtk"
           mkdir -p work
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY"             --pattern 'boot.img'             --pattern 'vendor_boot.img'             --pattern 'dtbo.img'             --pattern 'vendor_dlkm.img'             --dir work
 
+      - name: Download split stock vendor image
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY"             --pattern 'vendor.img.part*'             --dir work
+          parts=(work/vendor.img.part*)
+          if [ ! -e "${parts[0]}" ]; then
+            echo "Split vendor image assets were not found in release $TAG."
+            exit 1
+          fi
+          cat "${parts[@]}" > work/vendor.img
+
       - name: Install extraction tools
         run: |
           sudo apt-get update
           sudo apt-get install -y erofs-utils lz4 cpio python3
           git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg work/mkbootimg
 
-      - name: Unpack boot and vendor_boot
+      - name: Extract boot, DTB and stock vendor_boot
         run: |
           mkdir -p work/boot work/vendor_boot
-          python3 work/mkbootimg/unpack_bootimg.py --boot_img work/boot.img --out work/boot
-          python3 work/mkbootimg/unpack_bootimg.py --boot_img work/vendor_boot.img --out work/vendor_boot
+          python3 work/mkbootimg/unpack_bootimg.py             --boot_img work/boot.img             --out work/boot
+          python3 work/mkbootimg/unpack_bootimg.py             --boot_img work/vendor_boot.img             --out work/vendor_boot
+
           mkdir -p prebuilt
           cp work/vendor_boot.img prebuilt/vendor_boot.img
           cp work/dtbo.img prebuilt/dtbo.img
+          test -s work/boot/kernel
           cp work/boot/kernel prebuilt/kernel
-          if [ -f work/boot/dtb ]; then cp work/boot/dtb prebuilt/dtb.img; fi
+
+          if [ -f work/boot/dtb ]; then
+            cp work/boot/dtb prebuilt/dtb.img
+          elif [ -f work/vendor_boot/dtb ]; then
+            cp work/vendor_boot/dtb prebuilt/dtb.img
+          else
+            echo "No DTB was extracted from boot.img or vendor_boot.img."
+            exit 1
+          fi
 
       - name: Extract selected vendor DLKM modules
         run: |
           rm -rf work/vendor_dlkm
           mkdir -p work/vendor_dlkm prebuilt/modules
+
           if command -v extract.erofs >/dev/null 2>&1; then
             extract.erofs work/vendor_dlkm.img work/vendor_dlkm
           else
             fsck.erofs --extract=work/vendor_dlkm work/vendor_dlkm.img
           fi
-          while read -r module; do
+
+          while IFS= read -r module; do
             case "$module" in
               ""|#*) continue ;;
             esac
             src=$(find work/vendor_dlkm -type f -name "$module" -print -quit || true)
-            if [ -n "$src" ]; then
-              cp "$src" "prebuilt/modules/$module"
-            else
-              echo "Missing selected module: $module"
+            if [ -z "$src" ]; then
+              echo "Missing selected stock module: $module"
               exit 1
             fi
+            cp "$src" "prebuilt/modules/$module"
           done < prebuilt/recovery-modules.list
 
-      - name: Extract stock vendor SELinux policy and boot control HAL
+      - name: Extract stock SELinux policy and boot-control HAL
         run: |
+          rm -rf work/vendor
           mkdir -p work/vendor prebuilt/sepolicy prebuilt/bootctrl
-          cat work/vendor.img.part* > work/vendor.img
+
           if command -v extract.erofs >/dev/null 2>&1; then
             extract.erofs work/vendor.img work/vendor
           else
             fsck.erofs --extract=work/vendor work/vendor.img
           fi
-          test -f work/vendor/etc/selinux/vendor_sepolicy.cil
-          cp work/vendor/etc/selinux/vendor_sepolicy.cil prebuilt/sepolicy/vendor_sepolicy.cil
-          bootctl=$(find work/vendor -type f -name 'android.hardware.boot-service.mtk' -print -quit || true)
+
+          test -s work/vendor/etc/selinux/vendor_sepolicy.cil
+          cp work/vendor/etc/selinux/vendor_sepolicy.cil             prebuilt/sepolicy/vendor_sepolicy.cil
+
+          bootctl=$(find work/vendor -type f             -name 'android.hardware.boot-service.mtk' -print -quit || true)
+
           if [ -z "$bootctl" ]; then
             echo "Stock MTK boot-control service binary was not found."
-            find work/vendor/bin work/vendor/bin/hw -maxdepth 1 -type f -iname '*boot*' -print 2>/dev/null || true
+            find work/vendor/bin work/vendor/bin/hw               -maxdepth 1 -type f -iname '*boot*' -print 2>/dev/null || true
             exit 1
           fi
+
           cp "$bootctl" prebuilt/bootctrl/android.hardware.boot-service.mtk
 
-      - name: Verify artifacts
+      - name: Verify stock prebuilts
         run: |
           test -s prebuilt/vendor_boot.img
           test -s prebuilt/kernel
+          test -s prebuilt/dtb.img
           test -s prebuilt/dtbo.img
-          ls -lh prebuilt/vendor_boot.img prebuilt/kernel prebuilt/dtbo.img prebuilt/modules/*.ko prebuilt/sepolicy/vendor_sepolicy.cil prebuilt/bootctrl/android.hardware.boot-service.mtk
-          sha256sum prebuilt/vendor_boot.img prebuilt/kernel prebuilt/dtbo.img prebuilt/modules/*.ko
+          test -s prebuilt/sepolicy/vendor_sepolicy.cil
+          test -s prebuilt/bootctrl/android.hardware.boot-service.mtk
+          ls -lh             prebuilt/vendor_boot.img             prebuilt/kernel             prebuilt/dtb.img             prebuilt/dtbo.img             prebuilt/modules/*.ko             prebuilt/sepolicy/vendor_sepolicy.cil             prebuilt/bootctrl/android.hardware.boot-service.mtk
+          sha256sum             prebuilt/vendor_boot.img             prebuilt/kernel             prebuilt/dtb.img             prebuilt/dtbo.img             prebuilt/modules/*.ko             prebuilt/sepolicy/vendor_sepolicy.cil             prebuilt/bootctrl/android.hardware.boot-service.mtk
 
       - name: Commit stock prebuilts
         run: |
-          git add .gitattributes prebuilt/vendor_boot.img prebuilt/kernel prebuilt/dtb.img prebuilt/dtbo.img prebuilt/modules/*.ko prebuilt/sepolicy/vendor_sepolicy.cil prebuilt/bootctrl/android.hardware.boot-service.mtk
+          git add .gitattributes             prebuilt/vendor_boot.img             prebuilt/kernel             prebuilt/dtb.img             prebuilt/dtbo.img             prebuilt/modules/*.ko             prebuilt/sepolicy/vendor_sepolicy.cil             prebuilt/bootctrl/android.hardware.boot-service.mtk
+
           if git diff --cached --quiet; then
             echo "No prebuilt changes."
             exit 0
           fi
+
           git commit -m "Add stock Android 16 recovery prebuilts [stock-sync]"
           git push origin HEAD:main
