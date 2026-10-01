@@ -40,10 +40,15 @@ info = [
 ramdisk_base = math.ceil(header_size / page_size) * page_size
 info.append(f"ramdisk_base=0x{ramdisk_base:x}")
 
-if len(b) < ramdisk_base + ramdisk_size:
-    raise SystemExit("vendor_boot is shorter than the declared vendor ramdisk")
+ramdisk_end = ramdisk_base + ramdisk_size
+if ramdisk_end > len(b):
+    info.append(
+        f"warning=declared vendor ramdisk ends at 0x{ramdisk_end:x}, "
+        f"but image ends at 0x{len(b):x}; clamping to image size"
+    )
+    ramdisk_end = len(b)
 
-ramdisk = b[ramdisk_base:ramdisk_base + ramdisk_size]
+ramdisk = b[ramdisk_base:ramdisk_end]
 (out / "vendor_ramdisk.bin").write_bytes(ramdisk)
 
 if version >= 4:
