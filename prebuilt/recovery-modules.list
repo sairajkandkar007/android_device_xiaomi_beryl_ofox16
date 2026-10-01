@@ -1,17 +1,10 @@
-# Recovery-oriented modules selected from stock Android 16 Beryl analysis.
-# Initial allowlist; dependencies are resolved from the stock module tree.
-# Touch / input
+# Stock Android 16 Beryl modules confirmed by the extracted vendor_dlkm inventory.
+# Keep this list conservative; dependencies should be added only when the stock
+# module metadata proves they are required by a selected recovery module.
 fts_touch_i2c.ko
 lct_tp.ko
 xiaomi_tp.ko
-# USB / ADB transport support
 mtk_u_ether.ko
 mtk_usb_f_rndis.ko
-rps_perf.ko
-# Reboot / power-key path
-reboot-mode.ko
 syscon-reboot-mode.ko
-# MTK storage host controller
-mtk-mmc.ko
-# Keep this candidate available if the stock module tree requires it.
 gz_virtio_mod.ko
