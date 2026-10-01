@@ -26,12 +26,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install aria2 and Python payload dumper
+      - name: Install aria2 and payload-dumper-go
         run: |
           sudo apt-get update
           sudo apt-get install -y aria2
-          python3 -m pip install --upgrade pip
-          python3 -m pip install android-payload-dumper==2.3.0
+          
+          # Download and install payload-dumper-go (v1.2.2)
+          wget -q https://github.com/ssut/payload-dumper-go/releases/download/1.2.2/payload-dumper-go_1.2.2_linux_amd64.tar.gz
+          tar -xzf payload-dumper-go_1.2.2_linux_amd64.tar.gz
+          sudo mv payload-dumper-go /usr/local/bin/
+          rm payload-dumper-go_1.2.2_linux_amd64.tar.gz
 
       - name: Download ROM using parallel CDNs
         run: |
@@ -91,7 +95,8 @@ jobs:
 
       - name: Extract every payload image
         run: |
-          payload-dumper work/stock.zip -o work/images -j 4
+          # Use payload-dumper-go natively (it automatically utilizes all CPU cores)
+          payload-dumper-go -o work/images work/stock.zip
 
       - name: List extracted images
         run: |
@@ -114,4 +119,4 @@ jobs:
 
           gh release create "$TAG" "${images[@]}" \
             --title "Stock payload images - $TAG" \
-            --notes "Images extracted from stock ROM ZIP. Downloaded via parallel aria2 multi-CDN array."
+            --notes "Images extracted from stock ROM ZIP. Downloaded via parallel aria2 multi-CDN array. Extracted using payload-dumper-go."
