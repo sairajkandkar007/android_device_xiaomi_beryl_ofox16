@@ -3,8 +3,8 @@ name: Extract Stock ROM Payload
 on:
   workflow_dispatch:
     inputs:
-      rom_url:
-        description: "Direct HTTPS URL to the stock ROM ZIP"
+      rom_urls:
+        description: "Direct ROM URLs, one per line (same ROM on different CDNs)"
         required: true
         type: string
       release_tag:
@@ -25,19 +25,88 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install native Python payload dumper
+      - name: Install aria2 and Python payload dumper
         run: |
+          sudo apt-get update
+          sudo apt-get install -y aria2
           python3 -m pip install --upgrade pip
           python3 -m pip install android-payload-dumper==2.3.0
-          payload-dumper --version
 
-      - name: Download stock ROM ZIP
+      - name: Benchmark candidate CDNs
+        id: benchmark
         env:
-          ROM_URL: ${{ inputs.rom_url }}
+          ROM_URLS: ${{ inputs.rom_urls }}
+        run: |
+          set -uo pipefail
+          mkdir -p work/bench
+          : > work/bench/results.tsv
+
+          printf '%s\n' "$ROM_URLS" | sed '/^[[:space:]]*$/d' | while IFS= read -r url; do
+            echo "Benchmarking: $url"
+            out="work/bench/test-$(date +%s%N).bin"
+
+            start=$(date +%s%N)
+            if curl -L --fail --silent --show-error \
+                --range 0-20971519 \
+                --connect-timeout 10 --max-time 30 \
+                -o "$out" "$url"; then
+              end=$(date +%s%N)
+              bytes=$(stat -c '%s' "$out")
+              elapsed_ms=$(( (end-start) / 1000000 ))
+
+              if [ "$elapsed_ms" -gt 0 ] && [ "$bytes" -gt 0 ]; then
+                speed=$(awk -v b="$bytes" -v ms="$elapsed_ms" 'BEGIN {printf "%.2f", b/ms*1000/1048576}')
+                printf '%s\t%s\t%s\n' "$speed" "$elapsed_ms" "$url" >> work/bench/results.tsv
+                echo "  $speed MiB/s ($bytes bytes in ${elapsed_ms} ms)"
+              else
+                echo "  invalid benchmark result"
+              fi
+            else
+              echo "  FAILED"
+            fi
+            rm -f "$out"
+          done
+
+          if [ ! -s work/bench/results.tsv ]; then
+            echo "No CDN candidate completed the benchmark."
+            exit 1
+          fi
+
+          echo
+          echo "=== CDN benchmark ==="
+          sort -nr work/bench/results.tsv
+
+          fastest=$(sort -nr work/bench/results.tsv | head -n1 | cut -f3-)
+          {
+            echo "fastest_url<<EOF"
+            echo "$fastest"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Download ROM with fastest CDN
+        env:
+          FASTEST_URL: ${{ steps.benchmark.outputs.fastest_url }}
         run: |
           mkdir -p work/images
-          curl -L --fail --retry 5 --retry-all-errors --progress-bar \
-            "$ROM_URL" -o work/stock.zip
+          echo "Selected CDN:"
+          echo "$FASTEST_URL"
+
+          aria2c \
+            --file-allocation=none \
+            --continue=true \
+            --max-connection-per-server=16 \
+            --split=16 \
+            --min-split-size=20M \
+            --max-tries=8 \
+            --retry-wait=3 \
+            --connect-timeout=15 \
+            --timeout=30 \
+            --summary-interval=10 \
+            --console-log-level=notice \
+            --dir=work \
+            --out=stock.zip \
+            "$FASTEST_URL"
+
           ls -lh work/stock.zip
 
       - name: Extract every payload image
@@ -65,4 +134,4 @@ jobs:
 
           gh release create "$TAG" "${images[@]}" \
             --title "Stock payload images - $TAG" \
-            --notes "Images extracted from the supplied stock ROM ZIP with the Python android-payload-dumper tool."
+            --notes "Images extracted from the supplied stock ROM ZIP. CDN selected by a measured range-download benchmark; ROM downloaded with aria2."
