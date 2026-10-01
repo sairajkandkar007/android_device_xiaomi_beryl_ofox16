@@ -3,10 +3,6 @@ name: Extract Stock ROM Payload
 on:
   workflow_dispatch:
     inputs:
-      rom_urls:
-        description: "Direct ROM URLs, one per line (same ROM on different CDNs)"
-        required: true
-        type: string
       release_tag:
         description: "Release tag"
         required: true
@@ -35,7 +31,9 @@ jobs:
       - name: Benchmark candidate CDNs
         id: benchmark
         env:
-          ROM_URLS: ${{ inputs.rom_urls }}
+          ROM_URLS: |
+            https://bigota.d.miui.com/OS3.0.302.0.WOQINXM/beryl_in_global-ota_full-OS3.0.302.0.WOQINXM-user-16.0-1c6da5a6c2.zip
+            https://hugeota.d.miui.com/OS3.0.302.0.WOQINXM/beryl_in_global-ota_full-OS3.0.302.0.WOQINXM-user-16.0-1c6da5a6c2.zip
         run: |
           set -uo pipefail
           mkdir -p work/bench
