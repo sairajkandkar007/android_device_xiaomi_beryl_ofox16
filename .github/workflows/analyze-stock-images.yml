@@ -80,24 +80,24 @@ jobs:
           mkdir -p analysis/work/vendor_boot
           if [ -f analysis/images/vendor_boot.img ]; then
             python3 - <<'PY'
-import struct, pathlib
-p=pathlib.Path("analysis/images/vendor_boot.img")
-b=p.read_bytes()
-magic=b[:8]
-if magic != b"VNDRBOOT":
-    raise SystemExit(f"Unexpected vendor_boot magic: {magic!r}")
-version=struct.unpack_from("<I",b,8)[0]
-page=struct.unpack_from("<I",b,12)[0]
-kernel=struct.unpack_from("<I",b,16)[0]
-ramdisk=struct.unpack_from("<I",b,20)[0]
-dtb=struct.unpack_from("<I",b,24)[0]
-off=page + ((kernel+page-1)//page)*page
-ram=b[off:off+ramdisk]
-pathlib.Path("analysis/work/vendor_boot/vendor_ramdisk.bin").write_bytes(ram)
-pathlib.Path("analysis/report/vendor_boot_header.txt").write_text(
-    f"header_version={version}\npage_size={page}\nkernel_size={kernel}\nramdisk_size={ramdisk}\ndtb_size={dtb}\n"
-)
-PY
+          import struct, pathlib
+          p=pathlib.Path("analysis/images/vendor_boot.img")
+          b=p.read_bytes()
+          magic=b[:8]
+          if magic != b"VNDRBOOT":
+          raise SystemExit(f"Unexpected vendor_boot magic: {magic!r}")
+          version=struct.unpack_from("<I",b,8)[0]
+          page=struct.unpack_from("<I",b,12)[0]
+          kernel=struct.unpack_from("<I",b,16)[0]
+          ramdisk=struct.unpack_from("<I",b,20)[0]
+          dtb=struct.unpack_from("<I",b,24)[0]
+          off=page + ((kernel+page-1)//page)*page
+          ram=b[off:off+ramdisk]
+          pathlib.Path("analysis/work/vendor_boot/vendor_ramdisk.bin").write_bytes(ram)
+          pathlib.Path("analysis/report/vendor_boot_header.txt").write_text(
+          f"header_version={version}\npage_size={page}\nkernel_size={kernel}\nramdisk_size={ramdisk}\ndtb_size={dtb}\n"
+          )
+          PY
             file analysis/work/vendor_boot/vendor_ramdisk.bin
             echo "## vendor_boot header" >> analysis/report/01-image-inventory.md
             cat analysis/report/vendor_boot_header.txt >> analysis/report/01-image-inventory.md
