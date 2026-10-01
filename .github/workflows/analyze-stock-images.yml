@@ -1,0 +1,238 @@
+name: Analyze Stock Images for OFOX16
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "GitHub release containing the extracted stock images"
+        required: true
+        default: "stock-images"
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install analysis tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y android-sdk-libsparse-utils android-sdk-ext4-utils cpio file lz4 zstd unzip e2fsprogs erofs-utils binutils xxd
+
+      - name: Download all release assets
+        env:
+          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+          TAG: \${{ inputs.release_tag }}
+        run: |
+          mkdir -p analysis/images
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir analysis/images
+          find analysis/images -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
+
+      - name: Reassemble split images
+        run: |
+          cd analysis/images
+          for prefix in vendor.img system.img product.img odm.img; do
+            parts=( "$prefix".part* )
+            if [ -e "\${parts[0]}" ]; then
+              cat "\${parts[@]}" > "$prefix"
+              echo "Reassembled $prefix from \${#parts[@]} parts"
+            fi
+          done
+
+      - name: Analyze image inventory and headers
+        run: |
+          mkdir -p analysis/report analysis/work
+          {
+            echo "# Beryl OFOX16 Stock Image Analysis"
+            echo
+            echo "Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            echo
+            echo "## Image inventory"
+            echo
+            printf '| Image | Size | file(1) |\n|---|---:|---|\n'
+            find analysis/images -maxdepth 1 -type f ! -name '*.part*' -printf '%f\n' | sort | while read -r f; do
+              size=$(stat -c '%s' "analysis/images/$f")
+              kind=$(file -b "analysis/images/$f" | tr '|' '/')
+              printf '| %s | %s | %s |\n' "$f" "$size" "$kind"
+            done
+            echo
+            echo "## Boot-related headers"
+            for f in boot.img vendor_boot.img init_boot.img dtbo.img; do
+              if [ -f "analysis/images/$f" ]; then
+                echo
+                echo "### $f"
+                file "analysis/images/$f"
+                xxd -l 128 "analysis/images/$f"
+              fi
+            done
+          } > analysis/report/01-image-inventory.md
+
+      - name: Parse and inspect vendor_boot
+        run: |
+          set +e
+          mkdir -p analysis/work/vendor_boot
+          if [ -f analysis/images/vendor_boot.img ]; then
+            python3 - <<'PY'
+import struct, pathlib
+p=pathlib.Path("analysis/images/vendor_boot.img")
+b=p.read_bytes()
+magic=b[:8]
+if magic != b"VNDRBOOT":
+    raise SystemExit(f"Unexpected vendor_boot magic: {magic!r}")
+version=struct.unpack_from("<I",b,8)[0]
+page=struct.unpack_from("<I",b,12)[0]
+kernel=struct.unpack_from("<I",b,16)[0]
+ramdisk=struct.unpack_from("<I",b,20)[0]
+dtb=struct.unpack_from("<I",b,24)[0]
+off=page + ((kernel+page-1)//page)*page
+ram=b[off:off+ramdisk]
+pathlib.Path("analysis/work/vendor_boot/vendor_ramdisk.bin").write_bytes(ram)
+pathlib.Path("analysis/report/vendor_boot_header.txt").write_text(
+    f"header_version={version}\npage_size={page}\nkernel_size={kernel}\nramdisk_size={ramdisk}\ndtb_size={dtb}\n"
+)
+PY
+            file analysis/work/vendor_boot/vendor_ramdisk.bin
+            echo "## vendor_boot header" >> analysis/report/01-image-inventory.md
+            cat analysis/report/vendor_boot_header.txt >> analysis/report/01-image-inventory.md
+            file analysis/work/vendor_boot/vendor_ramdisk.bin >> analysis/report/01-image-inventory.md
+            mkdir -p analysis/work/vendor_boot/ramdisk
+            if file analysis/work/vendor_boot/vendor_ramdisk.bin | grep -qi gzip; then
+              gzip -dc analysis/work/vendor_boot/vendor_ramdisk.bin | cpio -itv > analysis/report/vendor_ramdisk_files.txt
+            elif file analysis/work/vendor_boot/vendor_ramdisk.bin | grep -qi lz4; then
+              lz4 -d analysis/work/vendor_boot/vendor_ramdisk.bin analysis/work/vendor_boot/ramdisk.cpio
+              cpio -itv < analysis/work/vendor_boot/ramdisk.cpio > analysis/report/vendor_ramdisk_files.txt
+            elif file analysis/work/vendor_boot/vendor_ramdisk.bin | grep -qi zstd; then
+              zstd -dc analysis/work/vendor_boot/vendor_ramdisk.bin | cpio -itv > analysis/report/vendor_ramdisk_files.txt
+            else
+              cpio -itv < analysis/work/vendor_boot/vendor_ramdisk.bin > analysis/report/vendor_ramdisk_files.txt
+            fi
+          fi
+
+      - name: Static FBE and keymaster inventory
+        run: |
+          set +e
+          {
+            echo "# FBE / crypto / keymaster component inventory"
+            echo
+            echo "Static inventory only; no user encryption keys are extracted."
+            echo
+            echo "## Candidate files"
+            find analysis/images analysis/work -type f -printf '%p\n' 2>/dev/null | grep -Ei '(keymaster|keystore|gatekeeper|cryptfs|fscrypt|vold|tee|trusty|avb|metadata|fstab|ueventd)' | sort -u
+            echo
+            echo "## Relevant strings"
+            for img in boot.img vendor_boot.img init_boot.img; do
+              [ -f "analysis/images/$img" ] || continue
+              echo
+              echo "### $img"
+              strings -a "analysis/images/$img" | grep -Ei 'keymaster|keystore2|gatekeeper|vold|fscrypt|fbe|metadata|avb|fstab|mtk|trusty' | head -n 400
+            done
+          } > analysis/report/02-fbe-keymaster-inventory.txt
+
+      - name: Extract fstab candidates
+        run: |
+          set +e
+          mkdir -p analysis/work/fstab
+          for src in analysis/images/boot.img analysis/images/init_boot.img analysis/images/vendor_boot.img; do
+            [ -f "$src" ] || continue
+            name=$(basename "$src" .img)
+            strings -a "$src" | grep -E 'fstab\.|/vendor/etc/fstab|/system/etc/fstab|/odm/etc/fstab|/metadata|/data' > "analysis/work/fstab/$name-strings.txt"
+          done
+          find analysis/work/fstab -type f -print -exec sed -n '1,300p' {} \; > analysis/report/03-fstab-candidates.txt
+
+      - name: Kernel module inventory
+        run: |
+          set +e
+          {
+            echo "# Kernel module inventory"
+            echo
+            find analysis/images analysis/work -type f \( -name '*.ko' -o -name '*.ko.*' \) -print | sort
+            echo
+            echo "## Crypto/storage/FBE-related module names"
+            find analysis/images analysis/work -type f \( -name '*.ko' -o -name '*.ko.*' \) -printf '%f\n' | grep -Ei '(dm|crypt|fscrypt|f2fs|ext4|ufs|mmc|crypto|key|virtio|storage)' | sort -u
+            echo
+            echo "## Module strings"
+            while IFS= read -r f; do
+              echo
+              echo "### $f"
+              file "$f"
+              strings -a "$f" | grep -E 'vermagic=|depends=|parm=' | head -n 30
+            done < <(find analysis/images analysis/work -type f \( -name '*.ko' -o -name '*.ko.*' \) -print | sort)
+          } > analysis/report/05-kernel-modules.md
+
+      - name: Build recovery recommendations
+        run: |
+          cat > analysis/report/04-recovery-analysis.md <<'EOF'
+# Beryl OFOX16 recovery analysis checklist
+
+## Boot architecture
+- Determine boot header version from boot and vendor_boot.
+- Determine whether recovery belongs in vendor_boot or another partition.
+- Preserve the stock vendor ramdisk when required by the device.
+- Confirm A/B and Virtual A/B from evidence rather than assumptions.
+
+## Dynamic partitions
+- Inspect super metadata if available.
+- Record logical partition names, groups, and sizes.
+- Do not hard-code OrangeFox dynamic sizing until verified.
+
+## FBE / decryption
+- Identify Android API level and FBE/fscrypt generation.
+- Identify metadata partition and fstab encryption flags.
+- Identify keymaster, keystore2, gatekeeper and TEE dependencies.
+- Identify vendor libraries and kernel modules required by the stock environment.
+- Do not enable OF_SKIP_FBE_DECRYPTION unless testing proves decryption is unavailable.
+- Do not guess OF_DEFAULT_KEYMASTER_VERSION; derive it from the vendor implementation.
+
+## Kernel modules
+- Inventory vendor_dlkm and vendor ramdisk .ko modules.
+- Record compression, vermagic and dependencies.
+- Focus on filesystem, device-mapper, crypto, storage, F2FS and ext4 modules.
+- Determine which modules are actually required in recovery.
+
+## OrangeFox variables to validate
+FOX_AB_DEVICE
+FOX_VIRTUAL_AB_DEVICE
+FOX_VENDOR_BOOT_RECOVERY
+FOX_REFERENCE_VENDOR_BOOT_IMAGE
+FOX_INSTALLER_VENDOR_BOOT_RAMDISK_INSTALL
+OF_FORCE_PREBUILT_KERNEL
+OF_SKIP_PREBUILT_MODULES
+OF_SKIP_FBE_DECRYPTION
+OF_SKIP_FBE_DECRYPTION_SDKVERSION
+OF_FBE_METADATA_MOUNT_IGNORE
+OF_FORCE_USE_RECOVERY_FSTAB
+OF_FORCE_CASEFOLDING
+FOX_ADD_API_V36_PREBUILTS
+
+Values should be selected only after reviewing the generated evidence.
+EOF
+
+      - name: Package analysis
+        run: |
+          tar -C analysis -czf beryl-ofox16-stock-analysis.tar.gz report work images
+          sha256sum beryl-ofox16-stock-analysis.tar.gz | tee analysis/report/SHA256SUMS
+
+      - name: Publish analysis release
+        env:
+          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+          TAG: beryl-ofox16-analysis
+        run: |
+          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes || true
+          gh release create "$TAG" \
+            beryl-ofox16-stock-analysis.tar.gz \
+            analysis/report/01-image-inventory.md \
+            analysis/report/02-fbe-keymaster-inventory.txt \
+            analysis/report/03-fstab-candidates.txt \
+            analysis/report/04-recovery-analysis.md \
+            analysis/report/05-kernel-modules.md \
+            analysis/report/vendor_ramdisk_files.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Beryl OFOX16 Stock Recovery Analysis" \
+            --notes "Static analysis of stock Beryl Android 16 images for OrangeFox recovery development."
