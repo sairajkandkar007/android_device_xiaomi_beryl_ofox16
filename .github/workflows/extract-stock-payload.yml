@@ -65,8 +65,6 @@ jobs:
               if curl -s -I -L -f --max-time 3 "$CANDIDATE" > /dev/null; then
                 echo "✅ Found active mirror: $CDN"
                 MIRRORS+=("$CANDIDATE")
-              else
-                echo "❌ Not synced on: $CDN"
               fi
             done
           fi
@@ -91,18 +89,31 @@ jobs:
             --out=stock.zip \
             "${MIRRORS[@]}"
 
-          ls -lh work/stock.zip
-
       - name: Extract every payload image
         run: |
-          # Use payload-dumper-go natively (it automatically utilizes all CPU cores)
           payload-dumper-go -o work/images work/stock.zip
 
-      - name: List extracted images
+      - name: Enforce 2GB GitHub Release size limit
         run: |
-          echo "Extracted images:"
-          find work/images -maxdepth 1 -type f -name '*.img' \
-            -printf '%f %s bytes\n' | sort
+          echo "Checking file sizes against GitHub's 2GB limit..."
+          for img in work/images/*.img; do
+            filesize=$(stat -c%s "$img")
+            
+            # Target split threshold: 1.9 GB (1900000000 bytes) to stay safely under the 2,147,483,648 limit
+            if [ "$filesize" -ge 1900000000 ]; then
+              echo "⚠️ $img is $filesize bytes (exceeds 2GB). Splitting into 1.5GB chunks..."
+              # This creates product.img.partaa, product.img.partab, etc.
+              split -b 1500M "$img" "${img}.part"
+              rm "$img" # Remove the original massive file so it isn't passed to the upload array
+            else
+              echo "✅ $img is $filesize bytes (under 2GB limit)."
+            fi
+          done
+
+      - name: List final upload assets
+        run: |
+          echo "Assets prepared for release:"
+          find work/images -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
 
       - name: Create release and upload all images
         env:
@@ -110,13 +121,13 @@ jobs:
           TAG: ${{ inputs.release_tag }}
         run: |
           shopt -s nullglob
-          images=(work/images/*.img)
+          assets=(work/images/*)
 
-          if [ ${#images[@]} -eq 0 ]; then
-            echo "No .img files were extracted."
+          if [ ${#assets[@]} -eq 0 ]; then
+            echo "No files found to upload."
             exit 1
           fi
 
-          gh release create "$TAG" "${images[@]}" \
+          gh release create "$TAG" "${assets[@]}" \
             --title "Stock payload images - $TAG" \
-            --notes "Images extracted from stock ROM ZIP. Downloaded via parallel aria2 multi-CDN array. Extracted using payload-dumper-go."
+            --notes "Images extracted from stock ROM ZIP. Files larger than 2GB have been automatically chunked to respect GitHub's upload limits."
