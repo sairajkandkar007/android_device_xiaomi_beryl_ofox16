@@ -15,7 +15,7 @@
 
 # Encryption metadata and userdata.
 /metadata                       ext4        /dev/block/by-name/metadata flags=display=metadata
-/data                           f2fs        /dev/block/by-name/userdata flags=display=data;encryptable=footer;fileencryption=aes-256-xts:aes-256-cts:v2;keydirectory=/metadata/vold/metadata_encryption;fsverity;inlinecrypt
+/data                           f2fs        /dev/block/by-name/userdata flags=display=data;fileencryption=aes-256-xts:aes-256-cts:v2;keydirectory=/metadata/vold/metadata_encryption;fsverity;inlinecrypt
 
 # Boot-critical physical partitions.
 /boot                           emmc        /dev/block/by-name/boot flags=display=boot;slotselect
