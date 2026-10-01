@@ -45,8 +45,8 @@ jobs:
 
             start=$(date +%s%N)
             if curl -L --fail --silent --show-error \
-                --range 0-20971519 \
-                --connect-timeout 10 --max-time 30 \
+                --range 0-2097151 \
+                --connect-timeout 15 --max-time 120 \
                 -o "$out" "$url"; then
               end=$(date +%s%N)
               bytes=$(stat -c '%s' "$out")
@@ -98,7 +98,7 @@ jobs:
             --max-tries=8 \
             --retry-wait=3 \
             --connect-timeout=15 \
-            --timeout=30 \
+            --timeout=60 \
             --summary-interval=10 \
             --console-log-level=notice \
             --dir=work \
