@@ -56,14 +56,6 @@ TARGET_USERIMAGES_USE_F2FS := true
 
 # Stock recovery lives in vendor_boot's vendor ramdisk.
 # Keep the stock vendor ramdisk during the first integration pass.
-FOX_AB_DEVICE := 1
-FOX_VENDOR_BOOT_RECOVERY := 1
-FOX_REFERENCE_VENDOR_BOOT_IMAGE := $(DEVICE_PATH)/prebuilt/vendor_boot.img
-
-# Android 16 / API 36 prebuilt support
-FOX_ADD_API_V36_PREBUILTS := 2
-OF_DONT_SUBSTITUTE_PERMISSIONS := 1
-
 # UI
 TW_THEME := portrait_hdpi
 TW_EXTRA_LANGUAGES := true
