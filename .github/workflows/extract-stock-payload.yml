@@ -1,0 +1,90 @@
+name: Extract Stock ROM Payload
+
+on:
+  workflow_dispatch:
+    inputs:
+      rom_url:
+        description: "Direct HTTPS URL to the stock ROM ZIP"
+        required: true
+        type: string
+      release_tag:
+        description: "Release tag"
+        required: true
+        default: "stock-images"
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Python payload tools
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install payload-dumper
+
+      - name: Download stock ROM
+        env:
+          ROM_URL: ${{ inputs.rom_url }}
+        run: |
+          mkdir -p work
+          curl -L --fail --retry 5 --retry-all-errors --progress-bar \
+            "$ROM_URL" -o work/stock.zip
+
+      - name: Extract payload.bin from ROM ZIP
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          z = Path("work/stock.zip")
+          out = Path("work/zip")
+          out.mkdir(parents=True, exist_ok=True)
+
+          with ZipFile(z) as f:
+              names = f.namelist()
+              payloads = [n for n in names if n == "payload.bin" or n.endswith("/payload.bin")]
+              if not payloads:
+                  raise SystemExit("payload.bin was not found in the ROM ZIP")
+              if len(payloads) > 1:
+                  raise SystemExit(f"Multiple payload.bin files found: {payloads}")
+              name = payloads[0]
+              print(f"Extracting {name}")
+              f.extract(name, out)
+
+          payload = out / payloads[0]
+          Path("work/payload.bin").write_bytes(payload.read_bytes())
+          print(f"payload.bin: {Path('work/payload.bin').stat().st_size} bytes")
+          PY
+
+      - name: Extract all payload partitions with Python
+        run: |
+          mkdir -p work/images
+          python3 -m payload_dumper \
+            --payload work/payload.bin \
+            --output work/images
+
+      - name: Show extracted images
+        run: |
+          echo "Extracted images:"
+          find work/images -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
+
+      - name: Remove non-image files
+        run: |
+          find work/images -type f ! -name '*.img' -delete
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          gh release create "$TAG" work/images/*.img \
+            --title "Stock payload images - $TAG" \
+            --notes "Extracted from the stock ROM ZIP using Python payload extraction in GitHub Actions."
