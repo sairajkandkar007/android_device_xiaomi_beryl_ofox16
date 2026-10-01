@@ -1,0 +1,25 @@
+# Android 16 Beryl recovery fstab
+# Dynamic logical partitions
+/system                         erofs       system       flags=display=system;logical;slotselect
+/system_ext                     erofs       system_ext   flags=display=system_ext;logical;slotselect
+/vendor                         erofs       vendor       flags=display=vendor;logical;slotselect
+/product                        erofs       product      flags=display=product;logical;slotselect
+/vendor_dlkm                    erofs       vendor_dlkm  flags=display=vendor_dlkm;logical;slotselect
+/odm_dlkm                       erofs       odm_dlkm     flags=display=odm_dlkm;logical;slotselect
+
+# Metadata / userdata
+/metadata                       ext4        /dev/block/by-name/metadata flags=display=metadata
+/data                           f2fs        /dev/block/by-name/userdata flags=display=data
+
+# Boot-critical partitions
+/boot                           emmc        /dev/block/by-name/boot flags=display=boot;slotselect
+/vendor_boot                    emmc        /dev/block/by-name/vendor_boot flags=display=vendor_boot
+/dtbo                           emmc        /dev/block/by-name/dtbo flags=display=dtbo
+/vbmeta                         emmc        /dev/block/by-name/vbmeta flags=display=vbmeta
+/vbmeta_system                  emmc        /dev/block/by-name/vbmeta_system flags=display=vbmeta_system;slotselect
+/vbmeta_vendor                  emmc        /dev/block/by-name/vbmeta_vendor flags=display=vbmeta_vendor;slotselect
+
+# Persistent / calibration partitions used by the stock layout
+/mnt/vendor/persist             ext4        /dev/block/by-name/persist flags=display=persist
+/mnt/vendor/nvdata              ext4        /dev/block/by-name/nvdata flags=display=nvdata
+/mnt/vendor/nvcfg               ext4        /dev/block/by-name/nvcfg flags=display=nvcfg
