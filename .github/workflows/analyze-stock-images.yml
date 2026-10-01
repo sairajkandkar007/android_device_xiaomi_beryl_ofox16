@@ -42,7 +42,7 @@ jobs:
             parts=( "$prefix".part* )
             if [ -e "${parts[0]}" ]; then
               cat "${parts[@]}" > "$prefix"
-              echo "Reassembled $prefix from \${#parts[@]} parts"
+              echo "Reassembled $prefix from ${#parts[@]} parts"
             fi
           done
 
@@ -76,80 +76,130 @@ jobs:
 
       - name: Parse and inspect vendor_boot
         run: |
-          set +e
+          set -e
           mkdir -p analysis/work/vendor_boot analysis/report
           if [ -f analysis/images/vendor_boot.img ]; then
-            python3 -c '
-import pathlib, struct, math
+            python3 <<'PY'
+import math
+import pathlib
+import struct
+
 p = pathlib.Path("analysis/images/vendor_boot.img")
 b = p.read_bytes()
+
 if b[:8] != b"VNDRBOOT":
     raise SystemExit(f"Unexpected vendor_boot magic: {b[:8]!r}")
-version, page, kernel_size, ramdisk_size = struct.unpack_from("<4I", b, 8)
-ramdisk_addr, = struct.unpack_from("<I", b, 24)
-cmdline = b[48:2096].split(b"\0", 1)[0].decode("utf-8", "replace")
-tags_addr, = struct.unpack_from("<I", b, 2096)
-name = b[2100:2116].split(b"\0", 1)[0].decode("utf-8", "replace")
-header_size, dtb_size = struct.unpack_from("<2I", b, 2116)
-dtb_addr, = struct.unpack_from("<I", b, 2124)
+
+# vendor_boot v3/v4 header:
+# magic(8), version(4), page_size(4), kernel_addr(4),
+# ramdisk_addr(4), vendor_ramdisk_size(4), cmdline(2048),
+# tags_addr(4), name(16), header_size(4), dtb_size(4), dtb_addr(8)
+version, page_size, kernel_addr, ramdisk_size = struct.unpack_from("<4I", b, 8)
+ramdisk_addr = struct.unpack_from("<I", b, 24)[0]
+cmdline = b[28:2076].split(b"\0", 1)[0].decode("utf-8", "replace")
+tags_addr = struct.unpack_from("<I", b, 2076)[0]
+name = b[2080:2096].split(b"\0", 1)[0].decode("utf-8", "replace")
+header_size = struct.unpack_from("<I", b, 2096)[0]
+dtb_size = struct.unpack_from("<I", b, 2100)[0]
+dtb_addr = struct.unpack_from("<Q", b, 2104)[0]
+
 info = [
     f"header_version={version}",
-    f"page_size={page}",
-    f"kernel_size={kernel_size}",
-    f"ramdisk_size={ramdisk_size}",
+    f"page_size={page_size}",
+    f"kernel_addr=0x{kernel_addr:x}",
     f"ramdisk_addr=0x{ramdisk_addr:x}",
+    f"vendor_ramdisk_size={ramdisk_size}",
     f"header_size={header_size}",
     f"dtb_size={dtb_size}",
     f"dtb_addr=0x{dtb_addr:x}",
     f"name={name}",
     f"cmdline={cmdline}",
 ]
-ramdisk_base = math.ceil(header_size / page) * page
+
+ramdisk_base = math.ceil(header_size / page_size) * page_size
+info.append(f"ramdisk_base=0x{ramdisk_base:x}")
+
+if len(b) < ramdisk_base + ramdisk_size:
+    raise SystemExit("vendor_boot is shorter than the declared vendor ramdisk")
+
+ramdisk = b[ramdisk_base:ramdisk_base + ramdisk_size]
+pathlib.Path("analysis/work/vendor_boot/vendor_ramdisk.bin").write_bytes(ramdisk)
+
 if version >= 4:
-    table_size, table_count, table_entry_size, bootconfig_size = struct.unpack_from("<4I", b, 2128)
-    info += [f"ramdisk_base=0x{ramdisk_base:x}", f"vendor_ramdisk_table_size={table_size}", f"vendor_ramdisk_table_entry_num={table_count}", f"vendor_ramdisk_table_entry_size={table_entry_size}", f"bootconfig_size={bootconfig_size}"]
-    if len(b) < ramdisk_base + ramdisk_size:
-        raise SystemExit("vendor_boot is shorter than the declared ramdisk")
-    ramdisk = b[ramdisk_base:ramdisk_base + ramdisk_size]
-    pathlib.Path("analysis/work/vendor_boot/vendor_ramdisk.bin").write_bytes(ramdisk)
-    table_base = math.ceil((ramdisk_base + ramdisk_size + dtb_size) / page) * page
+    # v4 adds: table_size, table_entry_num, table_entry_size, bootconfig_size
+    # immediately after dtb_addr.
+    table_size, table_count, table_entry_size, bootconfig_size = struct.unpack_from(
+        "<4I", b, 2112
+    )
+    info += [
+        f"vendor_ramdisk_table_size={table_size}",
+        f"vendor_ramdisk_table_entry_num={table_count}",
+        f"vendor_ramdisk_table_entry_size={table_entry_size}",
+        f"bootconfig_size={bootconfig_size}",
+    ]
+
+    table_base = math.ceil(
+        (ramdisk_base + ramdisk_size + dtb_size) / page_size
+    ) * page_size
     info.append(f"ramdisk_table_base=0x{table_base:x}")
+
     if table_entry_size == 108 and table_count * table_entry_size <= table_size:
         for i in range(table_count):
             off = table_base + i * table_entry_size
             if off + table_entry_size > len(b):
                 break
-            size, roff, rtype = struct.unpack_from("<III", b, off)
-            rname = b[off+12:off+44].split(b"\0", 1)[0].decode("utf-8", "replace")
-            info.append(f"ramdisk_fragment[{i}]: size={size} offset=0x{roff:x} type={rtype} name={rname}")
-            if roff + size <= len(ramdisk):
-                frag = ramdisk[roff:roff + size]
-                pathlib.Path("analysis/work/vendor_boot/ramdisk_fragment_%d_%s.bin" % (i, rname or str(rtype))).write_bytes(frag)
-else:
-    ramdisk = b[ramdisk_base:ramdisk_base + ramdisk_size]
-    pathlib.Path("analysis/work/vendor_boot/vendor_ramdisk.bin").write_bytes(ramdisk)
-    info.append(f"ramdisk_base=0x{ramdisk_base:x}")
-pathlib.Path("analysis/report/vendor_boot_header.txt").write_text("\\n".join(info) + "\\n")
-'
+
+            fragment_size, fragment_offset, fragment_type = struct.unpack_from(
+                "<3I", b, off
+            )
+            fragment_name = b[off + 12:off + 44].split(
+                b"\0", 1
+            )[0].decode("utf-8", "replace")
+
+            info.append(
+                f"ramdisk_fragment[{i}]: "
+                f"size={fragment_size} offset=0x{fragment_offset:x} "
+                f"type={fragment_type} name={fragment_name}"
+            )
+
+            if fragment_offset + fragment_size <= len(ramdisk):
+                fragment = ramdisk[
+                    fragment_offset:fragment_offset + fragment_size
+                ]
+                safe_name = fragment_name or str(fragment_type)
+                pathlib.Path(
+                    f"analysis/work/vendor_boot/"
+                    f"ramdisk_fragment_{i}_{safe_name}.bin"
+                ).write_bytes(fragment)
+
+pathlib.Path("analysis/report/vendor_boot_header.txt").write_text(
+    "\n".join(info) + "\n"
+)
+PY
+
             cat analysis/report/vendor_boot_header.txt
             cat analysis/report/vendor_boot_header.txt >> analysis/report/01-image-inventory.md
 
-            for ramdisk_bin in analysis/work/vendor_boot/vendor_ramdisk.bin analysis/work/vendor_boot/ramdisk_fragment_*.bin; do
+            : > analysis/report/vendor_ramdisk_files.txt
+            for ramdisk_bin in analysis/work/vendor_boot/*.bin; do
               [ -f "$ramdisk_bin" ] || continue
               out="analysis/report/$(basename "$ramdisk_bin").txt"
               echo "### $ramdisk_bin" >> "$out"
               file "$ramdisk_bin" >> "$out"
+
               if file "$ramdisk_bin" | grep -qi gzip; then
-                gzip -dc "$ramdisk_bin" 2>/dev/null | cpio -itv >> "$out" 2>&1
+                gzip -dc "$ramdisk_bin" 2>/dev/null | cpio -itv >> "$out" 2>&1 || true
               elif file "$ramdisk_bin" | grep -qi lz4; then
-                lz4 -dc "$ramdisk_bin" 2>/dev/null | cpio -itv >> "$out" 2>&1
+                lz4 -dc "$ramdisk_bin" 2>/dev/null | cpio -itv >> "$out" 2>&1 || true
               elif file "$ramdisk_bin" | grep -qi zstd; then
-                zstd -dc "$ramdisk_bin" 2>/dev/null | cpio -itv >> "$out" 2>&1
+                zstd -dc "$ramdisk_bin" 2>/dev/null | cpio -itv >> "$out" 2>&1 || true
               else
-                cpio -itv < "$ramdisk_bin" >> "$out" 2>&1
+                cpio -itv < "$ramdisk_bin" >> "$out" 2>&1 || true
               fi
+
+              cat "$out" >> analysis/report/vendor_ramdisk_files.txt
+              echo >> analysis/report/vendor_ramdisk_files.txt
             done
-            cat analysis/report/vendor_ramdisk*.txt 2>/dev/null > analysis/report/vendor_ramdisk_files.txt || true
           fi
 
       - name: Static FBE and keymaster inventory
