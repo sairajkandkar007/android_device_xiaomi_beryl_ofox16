@@ -202,6 +202,152 @@ PY
             done
           fi
 
+      - name: Extract filesystem images for recovery analysis
+        run: |
+          set -e
+          mkdir -p analysis/work/fs
+          cat > analysis/work/extract_fs.sh <<'SH'
+          #!/usr/bin/env bash
+          set -e
+          img="$1"
+          name="$2"
+          out="analysis/work/fs/$name"
+          mkdir -p "$out"
+
+          echo "=== $name ===" | tee "$out/summary.txt"
+          file "$img" | tee -a "$out/summary.txt"
+
+          fstype=""
+          if file "$img" | grep -qi 'EROFS'; then
+            fstype=erofs
+          elif file "$img" | grep -Eqi 'ext4 filesystem|Linux.*ext4'; then
+            fstype=ext4
+          fi
+
+          if [ "$fstype" = erofs ]; then
+            if command -v extract.erofs >/dev/null 2>&1; then
+              extract.erofs "$img" "$out/rootfs" || true
+            elif command -v fsck.erofs >/dev/null 2>&1; then
+              mkdir -p "$out/rootfs"
+              fsck.erofs --extract="$out/rootfs" "$img" || true
+            fi
+          elif [ "$fstype" = ext4 ]; then
+            mkdir -p "$out/rootfs"
+            debugfs -R "rdump / $out/rootfs" "$img" > "$out/debugfs.log" 2>&1 || true
+          fi
+
+          if [ -d "$out/rootfs" ]; then
+            find "$out/rootfs" -type f | sort > "$out/files.txt"
+            echo "file_count=$(wc -l < "$out/files.txt")" | tee -a "$out/summary.txt"
+          else
+            echo "filesystem extraction unavailable" | tee -a "$out/summary.txt"
+          fi
+          SH
+          chmod +x analysis/work/extract_fs.sh
+
+          for pair in             "analysis/images/vendor_dlkm.img vendor_dlkm"             "analysis/images/system_dlkm.img system_dlkm"             "analysis/images/vendor.img vendor"             "analysis/images/odm.img odm"; do
+            set -- $pair
+            [ -f "$1" ] || continue
+            analysis/work/extract_fs.sh "$1" "$2"
+          done
+
+          {
+            echo "# Extracted filesystem inventory"
+            echo
+            for d in analysis/work/fs/*; do
+              [ -d "$d" ] || continue
+              echo "## $(basename "$d")"
+              cat "$d/summary.txt" 2>/dev/null || true
+              echo
+            done
+          } > analysis/report/06-filesystem-inventory.md
+
+      - name: Analyze extracted modules and crypto components
+        run: |
+          set -e
+          {
+            echo "# Beryl recovery module and crypto analysis"
+            echo
+            echo "## Kernel modules"
+            find analysis/work/fs -type f \( -name '*.ko' -o -name '*.ko.*' \) -print | sort
+            echo
+            echo "## Relevant module names"
+            find analysis/work/fs -type f \( -name '*.ko' -o -name '*.ko.*' \) -printf '%f\n' |
+              grep -Ei '(dm|crypt|fscrypt|f2fs|ext4|ufs|mmc|sdhci|crypto|key|virtio|storage|avb)' |
+              sort -u || true
+            echo
+            echo "## Module metadata"
+            while IFS= read -r mod; do
+              echo
+              echo "### $mod"
+              file "$mod"
+              strings -a "$mod" |
+                grep -E 'vermagic=|depends=|parm=|__versions|module_layout' |
+                head -n 80 || true
+            done < <(find analysis/work/fs -type f \( -name '*.ko' -o -name '*.ko.*' \) -print | sort)
+
+            echo
+            echo "## KeyMint / Keymaster / Gatekeeper / TEE"
+            find analysis/work/fs -type f -printf '%p\n' |
+              grep -Ei '(keymint|keymaster|keystore2|gatekeeper|trusty|tee|tpm|weaver|strongbox)' |
+              sort -u || true
+
+            echo
+            echo "## FBE / fscrypt / vold"
+            find analysis/work/fs -type f -printf '%p\n' |
+              grep -Ei '(fscrypt|cryptfs|vold|fbe|metadata|keyref|wrappedkey)' |
+              sort -u || true
+
+            echo
+            echo "## Encryption-related libraries and HALs"
+            find analysis/work/fs -type f |
+              grep -Ei '/(lib|lib64|bin|bin/hw|etc)/' |
+              grep -Ei '(crypto|crypt|keymint|keymaster|keystore|gatekeeper|secure|trusty|tee|vold)' |
+              sort -u || true
+          } > analysis/report/07-module-crypto-analysis.md
+
+      - name: Analyze init, fstab, VINTF and crypto configuration
+        run: |
+          set -e
+          {
+            echo "# Beryl recovery configuration analysis"
+            echo
+            echo "## fstab files"
+            find analysis/work/fs -type f -iname 'fstab*' -o -path '*/etc/fstab*' |
+              sort -u |
+              while IFS= read -r f; do
+                echo
+                echo "### $f"
+                sed -n '1,260p' "$f" 2>/dev/null || true
+              done
+
+            echo
+            echo "## init services related to storage and encryption"
+            find analysis/work/fs -type f |
+              grep -E '/(etc/init|etc)/.*(vold|keymaster|keymint|keystore|gatekeeper|crypt|fscrypt|metadata)' |
+              sort -u |
+              while IFS= read -r f; do
+                echo
+                echo "### $f"
+                sed -n '1,220p' "$f" 2>/dev/null || true
+              done
+
+            echo
+            echo "## VINTF declarations"
+            find analysis/work/fs -type f |
+              grep -E '/etc/vintf/.*\.(xml|manifest|matrix)$' |
+              sort -u |
+              while IFS= read -r f; do
+                echo
+                echo "### $f"
+                sed -n '1,220p' "$f" 2>/dev/null || true
+              done
+
+            echo
+            echo "## Crypto-related strings in extracted configuration"
+            grep -RniE '(fileencryption|metadata_encryption|keydirectory|wrappedkey|fscrypt|keymint|keymaster|keystore2|gatekeeper|vold|avb)'               analysis/work/fs 2>/dev/null | head -n 3000 || true
+          } > analysis/report/08-recovery-config-analysis.md
+
       - name: Static FBE and keymaster inventory
         run: |
           set +e
