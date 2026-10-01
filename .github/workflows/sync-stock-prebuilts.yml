@@ -87,7 +87,7 @@ jobs:
       - name: Extract selected vendor DLKM modules
         run: |
           rm -rf work/vendor_dlkm
-          mkdir -p work/vendor sepolicy bootctrl_dlkm prebuilt/modules
+          mkdir -p work/vendor_dlkm prebuilt/modules sepolicy bootctrl
 
           if command -v extract.erofs >/dev/null 2>&1; then
             extract.erofs work/vendor_dlkm.img work/vendor_dlkm
@@ -140,11 +140,11 @@ jobs:
           test -s sepolicy/vendor_sepolicy.cil
           test -s bootctrl/android.hardware.boot-service.mtk
           ls -lh             prebuilt/vendor_boot.img             prebuilt/kernel             prebuilt/dtb.img             prebuilt/dtbo.img             prebuilt/modules/*.ko             sepolicy/vendor_sepolicy.cil             bootctrl/android.hardware.boot-service.mtk
-          sha256sum             prebuilt/vendor_boot.img             prebuilt/kernel             prebuilt/dtb.img             prebuilt/dtbo.img             prebuilt/modules/*.ko             prebuilt/sepolicy/vendor_sepolicy.cil             prebuilt/bootctrl/android.hardware.boot-service.mtk
+          sha256sum             prebuilt/vendor_boot.img             prebuilt/kernel             prebuilt/dtb.img             prebuilt/dtbo.img             prebuilt/modules/*.ko             sepolicy/vendor_sepolicy.cil             bootctrl/android.hardware.boot-service.mtk
 
       - name: Push extracted recovery prebuilts to device tree
         run: |
-          git add .gitattributes prebuilt/
+          git add .gitattributes prebuilt/ sepolicy/ bootctrl/
 
           echo "Files staged for device tree:"
           git status --short
