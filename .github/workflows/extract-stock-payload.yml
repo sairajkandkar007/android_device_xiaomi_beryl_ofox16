@@ -3,6 +3,11 @@ name: Extract Stock ROM Payload
 on:
   workflow_dispatch:
     inputs:
+      rom_url:
+        description: "Direct URL to the Xiaomi ROM ZIP"
+        required: true
+        default: "https://bigota.d.miui.com/OS3.0.302.0.WOQINXM/beryl_in_global-ota_full-OS3.0.302.0.WOQINXM-user-16.0-1c6da5a6c2.zip"
+        type: string
       release_tag:
         description: "Release tag"
         required: true
@@ -28,73 +33,50 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install android-payload-dumper==2.3.0
 
-      - name: Benchmark candidate CDNs
-        id: benchmark
-        env:
-          ROM_URLS: |
-            https://bigota.d.miui.com/OS3.0.302.0.WOQINXM/beryl_in_global-ota_full-OS3.0.302.0.WOQINXM-user-16.0-1c6da5a6c2.zip
-            https://hugeota.d.miui.com/OS3.0.302.0.WOQINXM/beryl_in_global-ota_full-OS3.0.302.0.WOQINXM-user-16.0-1c6da5a6c2.zip
-        run: |
-          set -uo pipefail
-          mkdir -p work/bench
-          : > work/bench/results.tsv
-
-          printf '%s\n' "$ROM_URLS" | sed '/^[[:space:]]*$/d' | while IFS= read -r url; do
-            echo "Benchmarking: $url"
-            out="work/bench/test-$(date +%s%N).bin"
-
-            start=$(date +%s%N)
-            if curl -L --fail --silent --show-error \
-                --range 0-2097151 \
-                --connect-timeout 15 --max-time 120 \
-                -o "$out" "$url"; then
-              end=$(date +%s%N)
-              bytes=$(stat -c '%s' "$out")
-              elapsed_ms=$(( (end-start) / 1000000 ))
-
-              if [ "$elapsed_ms" -gt 0 ] && [ "$bytes" -gt 0 ]; then
-                speed=$(awk -v b="$bytes" -v ms="$elapsed_ms" 'BEGIN {printf "%.2f", b/ms*1000/1048576}')
-                printf '%s\t%s\t%s\n' "$speed" "$elapsed_ms" "$url" >> work/bench/results.tsv
-                echo "  $speed MiB/s ($bytes bytes in ${elapsed_ms} ms)"
-              else
-                echo "  invalid benchmark result"
-              fi
-            else
-              echo "  FAILED"
-            fi
-            rm -f "$out"
-          done
-
-          if [ ! -s work/bench/results.tsv ]; then
-            echo "No CDN candidate completed the benchmark."
-            exit 1
-          fi
-
-          echo
-          echo "=== CDN benchmark ==="
-          sort -nr work/bench/results.tsv
-
-          fastest=$(sort -nr work/bench/results.tsv | head -n1 | cut -f3-)
-          {
-            echo "fastest_url<<EOF"
-            echo "$fastest"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Download ROM with fastest CDN
-        env:
-          FASTEST_URL: ${{ steps.benchmark.outputs.fastest_url }}
+      - name: Download ROM using parallel CDNs
         run: |
           mkdir -p work/images
-          echo "Selected CDN:"
-          echo "$FASTEST_URL"
+          
+          ROM_URL="${{ inputs.rom_url }}"
+          MIRRORS=("$ROM_URL")
+          
+          if [[ "$ROM_URL" == *".miui.com"* ]] || [[ "$ROM_URL" == *".azureedge.net"* ]]; then
+            ROM_PATH=$(echo "$ROM_URL" | sed -E 's|^https?://[^/]+(/.*)|\1|')
+            
+            CDNS=(
+              "bigota.d.miui.com"
+              "hugeota.d.miui.com"
+              "bn.d.miui.com"
+              "cdnorg.d.miui.com"
+              "cdn-ota.azureedge.net"
+              "airtel.bigota.d.miui.com"
+              "bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com"
+            )
+            
+            for CDN in "${CDNS[@]}"; do
+              CANDIDATE="https://$CDN$ROM_PATH"
+              
+              if [[ "$CANDIDATE" == "$ROM_URL" ]]; then continue; fi
+              
+              if curl -s -I -L -f --max-time 3 "$CANDIDATE" > /dev/null; then
+                echo "✅ Found active mirror: $CDN"
+                MIRRORS+=("$CANDIDATE")
+              else
+                echo "❌ Not synced on: $CDN"
+              fi
+            done
+          fi
+          
+          echo "Downloading concurrently from validated mirrors:"
+          printf '  %s\n' "${MIRRORS[@]}"
 
           aria2c \
             --file-allocation=none \
             --continue=true \
             --max-connection-per-server=16 \
-            --split=16 \
-            --min-split-size=20M \
+            --split=64 \
+            --min-split-size=1M \
+            --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
             --max-tries=8 \
             --retry-wait=3 \
             --connect-timeout=15 \
@@ -103,7 +85,7 @@ jobs:
             --console-log-level=notice \
             --dir=work \
             --out=stock.zip \
-            "$FASTEST_URL"
+            "${MIRRORS[@]}"
 
           ls -lh work/stock.zip
 
@@ -132,4 +114,4 @@ jobs:
 
           gh release create "$TAG" "${images[@]}" \
             --title "Stock payload images - $TAG" \
-            --notes "Images extracted from the supplied stock ROM ZIP. CDN selected by a measured range-download benchmark; ROM downloaded with aria2."
+            --notes "Images extracted from stock ROM ZIP. Downloaded via parallel aria2 multi-CDN array."
