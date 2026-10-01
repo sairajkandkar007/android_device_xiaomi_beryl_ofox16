@@ -1,6 +1,8 @@
 name: Analyze Stock Images for OFOX16
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       release_tag:
