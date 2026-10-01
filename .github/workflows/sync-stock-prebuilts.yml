@@ -1,0 +1,97 @@
+name: Sync Stock Recovery Prebuilts
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release containing extracted stock images"
+        required: true
+        default: "stock-images"
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Enable Git LFS
+        run: |
+          git lfs install
+          git lfs track "prebuilt/vendor_boot.img" "prebuilt/kernel" "prebuilt/dtb.img" "prebuilt/dtbo.img" "prebuilt/modules/*.ko"
+          git add .gitattributes
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Download required stock images
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          mkdir -p work
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY"             --pattern 'boot.img'             --pattern 'vendor_boot.img'             --pattern 'dtbo.img'             --pattern 'vendor_dlkm.img'             --dir work
+
+      - name: Install extraction tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y erofs-utils lz4 cpio python3
+          git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg work/mkbootimg
+
+      - name: Unpack boot and vendor_boot
+        run: |
+          mkdir -p work/boot work/vendor_boot
+          python3 work/mkbootimg/unpack_bootimg.py --boot_img work/boot.img --out work/boot
+          python3 work/mkbootimg/unpack_bootimg.py --boot_img work/vendor_boot.img --out work/vendor_boot
+          mkdir -p prebuilt
+          cp work/vendor_boot.img prebuilt/vendor_boot.img
+          cp work/dtbo.img prebuilt/dtbo.img
+          cp work/boot/kernel prebuilt/kernel
+          if [ -f work/boot/dtb ]; then cp work/boot/dtb prebuilt/dtb.img; fi
+
+      - name: Extract selected vendor DLKM modules
+        run: |
+          rm -rf work/vendor_dlkm
+          mkdir -p work/vendor_dlkm prebuilt/modules
+          if command -v extract.erofs >/dev/null 2>&1; then
+            extract.erofs work/vendor_dlkm.img work/vendor_dlkm
+          else
+            fsck.erofs --extract=work/vendor_dlkm work/vendor_dlkm.img
+          fi
+          while read -r module; do
+            case "$module" in
+              ""|#*) continue ;;
+            esac
+            src=$(find work/vendor_dlkm -type f -name "$module" -print -quit || true)
+            if [ -n "$src" ]; then
+              cp "$src" "prebuilt/modules/$module"
+            else
+              echo "Missing selected module: $module"
+              exit 1
+            fi
+          done < prebuilt/recovery-modules.list
+
+      - name: Verify artifacts
+        run: |
+          test -s prebuilt/vendor_boot.img
+          test -s prebuilt/kernel
+          test -s prebuilt/dtbo.img
+          ls -lh prebuilt/vendor_boot.img prebuilt/kernel prebuilt/dtbo.img prebuilt/modules/*.ko
+          sha256sum prebuilt/vendor_boot.img prebuilt/kernel prebuilt/dtbo.img prebuilt/modules/*.ko
+
+      - name: Commit stock prebuilts
+        run: |
+          git add .gitattributes prebuilt/vendor_boot.img prebuilt/kernel prebuilt/dtb.img prebuilt/dtbo.img prebuilt/modules/*.ko
+          if git diff --cached --quiet; then
+            echo "No prebuilt changes."
+            exit 0
+          fi
+          git commit -m "Add stock Android 16 recovery prebuilts [stock-sync]"
+          git push origin HEAD:main
