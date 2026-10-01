@@ -1,0 +1,5 @@
+# Stock Android 16 Beryl artifact source
+# Build: OS3.0.302.0.WOQINXM
+# ZIP: beryl_in_global-ota_full-OS3.0.302.0.WOQINXM-user-16.0-1c6da5a6c2.zip
+# MD5: 1c6da5a6c24ecbe9dffb9e4356a0b4bd
+https://bigota.d.miui.com/OS3.0.302.0.WOQINXM/beryl_in_global-ota_full-OS3.0.302.0.WOQINXM-user-16.0-1c6da5a6c2.zip
