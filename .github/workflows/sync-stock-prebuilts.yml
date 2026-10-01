@@ -31,8 +31,8 @@ jobs:
           git lfs track "prebuilt/dtb.img"
           git lfs track "prebuilt/dtbo.img"
           git lfs track "prebuilt/modules/*.ko"
-          git lfs track "prebuilt/sepolicy/vendor_sepolicy.cil"
-          git lfs track "prebuilt/bootctrl/android.hardware.boot-service.mtk"
+          git lfs track "vendor_sepolicy.cil"
+          git lfs track "android.hardware.boot-service.mtk"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
@@ -110,7 +110,7 @@ jobs:
       - name: Extract stock SELinux policy and boot-control HAL
         run: |
           rm -rf work/vendor
-          mkdir -p work/vendor prebuilt/sepolicy prebuilt/bootctrl
+          mkdir -p work/vendor
 
           if command -v extract.erofs >/dev/null 2>&1; then
             extract.erofs work/vendor.img work/vendor
@@ -119,7 +119,7 @@ jobs:
           fi
 
           test -s work/vendor/etc/selinux/vendor_sepolicy.cil
-          cp work/vendor/etc/selinux/vendor_sepolicy.cil             prebuilt/sepolicy/vendor_sepolicy.cil
+          cp work/vendor/etc/selinux/vendor_sepolicy.cil             ./vendor_sepolicy.cil
 
           bootctl=$(find work/vendor -type f             -name 'android.hardware.boot-service.mtk' -print -quit || true)
 
@@ -129,7 +129,7 @@ jobs:
             exit 1
           fi
 
-          cp "$bootctl" prebuilt/bootctrl/android.hardware.boot-service.mtk
+          cp "$bootctl" ./android.hardware.boot-service.mtk
 
       - name: Verify stock prebuilts
         run: |
@@ -137,9 +137,9 @@ jobs:
           test -s prebuilt/kernel
           test -s prebuilt/dtb.img
           test -s prebuilt/dtbo.img
-          test -s prebuilt/sepolicy/vendor_sepolicy.cil
-          test -s prebuilt/bootctrl/android.hardware.boot-service.mtk
-          ls -lh             prebuilt/vendor_boot.img             prebuilt/kernel             prebuilt/dtb.img             prebuilt/dtbo.img             prebuilt/modules/*.ko             prebuilt/sepolicy/vendor_sepolicy.cil             prebuilt/bootctrl/android.hardware.boot-service.mtk
+          test -s vendor_sepolicy.cil
+          test -s android.hardware.boot-service.mtk
+          ls -lh             prebuilt/vendor_boot.img             prebuilt/kernel             prebuilt/dtb.img             prebuilt/dtbo.img             prebuilt/modules/*.ko             vendor_sepolicy.cil             android.hardware.boot-service.mtk
           sha256sum             prebuilt/vendor_boot.img             prebuilt/kernel             prebuilt/dtb.img             prebuilt/dtbo.img             prebuilt/modules/*.ko             prebuilt/sepolicy/vendor_sepolicy.cil             prebuilt/bootctrl/android.hardware.boot-service.mtk
 
       - name: Push extracted recovery prebuilts to device tree
