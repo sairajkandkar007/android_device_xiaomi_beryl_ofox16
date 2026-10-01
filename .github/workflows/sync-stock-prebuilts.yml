@@ -26,7 +26,9 @@ jobs:
       - name: Enable Git LFS
         run: |
           git lfs install
-          git lfs track "prebuilt/vendor_boot.img" "prebuilt/kernel" "prebuilt/dtb.img" "prebuilt/dtbo.img" "prebuilt/modules/*.ko"
+          git lfs track "prebuilt/vendor_boot.img" "prebuilt/kernel" "prebuilt/dtb.img" "prebuilt/dtbo.img" "prebuilt/modules/*.ko
+prebuilt/sepolicy/vendor_sepolicy.cil
+prebuilt/bootctrl/android.hardware.boot-service.mtk"
           git add .gitattributes
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -78,17 +80,36 @@ jobs:
             fi
           done < prebuilt/recovery-modules.list
 
+      - name: Extract stock vendor SELinux policy and boot control HAL
+        run: |
+          mkdir -p work/vendor prebuilt/sepolicy prebuilt/bootctrl
+          cat work/vendor.img.part* > work/vendor.img
+          if command -v extract.erofs >/dev/null 2>&1; then
+            extract.erofs work/vendor.img work/vendor
+          else
+            fsck.erofs --extract=work/vendor work/vendor.img
+          fi
+          test -f work/vendor/etc/selinux/vendor_sepolicy.cil
+          cp work/vendor/etc/selinux/vendor_sepolicy.cil prebuilt/sepolicy/vendor_sepolicy.cil
+          bootctl=$(find work/vendor -type f -name 'android.hardware.boot-service.mtk' -print -quit || true)
+          if [ -z "$bootctl" ]; then
+            echo "Stock MTK boot-control service binary was not found."
+            find work/vendor/bin work/vendor/bin/hw -maxdepth 1 -type f -iname '*boot*' -print 2>/dev/null || true
+            exit 1
+          fi
+          cp "$bootctl" prebuilt/bootctrl/android.hardware.boot-service.mtk
+
       - name: Verify artifacts
         run: |
           test -s prebuilt/vendor_boot.img
           test -s prebuilt/kernel
           test -s prebuilt/dtbo.img
-          ls -lh prebuilt/vendor_boot.img prebuilt/kernel prebuilt/dtbo.img prebuilt/modules/*.ko
+          ls -lh prebuilt/vendor_boot.img prebuilt/kernel prebuilt/dtbo.img prebuilt/modules/*.ko prebuilt/sepolicy/vendor_sepolicy.cil prebuilt/bootctrl/android.hardware.boot-service.mtk
           sha256sum prebuilt/vendor_boot.img prebuilt/kernel prebuilt/dtbo.img prebuilt/modules/*.ko
 
       - name: Commit stock prebuilts
         run: |
-          git add .gitattributes prebuilt/vendor_boot.img prebuilt/kernel prebuilt/dtb.img prebuilt/dtbo.img prebuilt/modules/*.ko
+          git add .gitattributes prebuilt/vendor_boot.img prebuilt/kernel prebuilt/dtb.img prebuilt/dtbo.img prebuilt/modules/*.ko prebuilt/sepolicy/vendor_sepolicy.cil prebuilt/bootctrl/android.hardware.boot-service.mtk
           if git diff --cached --quiet; then
             echo "No prebuilt changes."
             exit 0
