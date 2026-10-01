@@ -3,3 +3,5 @@ prebuilt/kernel filter=lfs diff=lfs merge=lfs -text
 prebuilt/dtb.img filter=lfs diff=lfs merge=lfs -text
 prebuilt/dtbo.img filter=lfs diff=lfs merge=lfs -text
 prebuilt/modules/*.ko filter=lfs diff=lfs merge=lfs -text
+prebuilt/sepolicy/vendor_sepolicy.cil filter=lfs diff=lfs merge=lfs -text
+prebuilt/bootctrl/android.hardware.boot-service.mtk filter=lfs diff=lfs merge=lfs -text
