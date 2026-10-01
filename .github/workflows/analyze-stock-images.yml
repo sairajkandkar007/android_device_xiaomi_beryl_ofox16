@@ -28,8 +28,8 @@ jobs:
 
       - name: Download all release assets
         env:
-          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
-          TAG: \${{ inputs.release_tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.release_tag }}
         run: |
           mkdir -p analysis/images
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir analysis/images
@@ -40,8 +40,8 @@ jobs:
           cd analysis/images
           for prefix in vendor.img system.img product.img odm.img; do
             parts=( "$prefix".part* )
-            if [ -e "\${parts[0]}" ]; then
-              cat "\${parts[@]}" > "$prefix"
+            if [ -e "${parts[0]}" ]; then
+              cat "${parts[@]}" > "$prefix"
               echo "Reassembled $prefix from \${#parts[@]} parts"
             fi
           done
@@ -77,42 +77,79 @@ jobs:
       - name: Parse and inspect vendor_boot
         run: |
           set +e
-          mkdir -p analysis/work/vendor_boot
+          mkdir -p analysis/work/vendor_boot analysis/report
           if [ -f analysis/images/vendor_boot.img ]; then
-            python3 - <<'PY'
-          import struct, pathlib
-          p=pathlib.Path("analysis/images/vendor_boot.img")
-          b=p.read_bytes()
-          magic=b[:8]
-          if magic != b"VNDRBOOT":
-          raise SystemExit(f"Unexpected vendor_boot magic: {magic!r}")
-          version=struct.unpack_from("<I",b,8)[0]
-          page=struct.unpack_from("<I",b,12)[0]
-          kernel=struct.unpack_from("<I",b,16)[0]
-          ramdisk=struct.unpack_from("<I",b,20)[0]
-          dtb=struct.unpack_from("<I",b,24)[0]
-          off=page + ((kernel+page-1)//page)*page
-          ram=b[off:off+ramdisk]
-          pathlib.Path("analysis/work/vendor_boot/vendor_ramdisk.bin").write_bytes(ram)
-          pathlib.Path("analysis/report/vendor_boot_header.txt").write_text(
-          f"header_version={version}\npage_size={page}\nkernel_size={kernel}\nramdisk_size={ramdisk}\ndtb_size={dtb}\n"
-          )
-          PY
-            file analysis/work/vendor_boot/vendor_ramdisk.bin
-            echo "## vendor_boot header" >> analysis/report/01-image-inventory.md
+            python3 -c '
+import pathlib, struct, math
+p = pathlib.Path("analysis/images/vendor_boot.img")
+b = p.read_bytes()
+if b[:8] != b"VNDRBOOT":
+    raise SystemExit(f"Unexpected vendor_boot magic: {b[:8]!r}")
+version, page, kernel_size, ramdisk_size = struct.unpack_from("<4I", b, 8)
+ramdisk_addr, = struct.unpack_from("<I", b, 24)
+cmdline = b[48:2096].split(b"\\0", 1)[0].decode("utf-8", "replace")
+tags_addr, = struct.unpack_from("<I", b, 2096)
+name = b[2100:2116].split(b"\\0", 1)[0].decode("utf-8", "replace")
+header_size, dtb_size = struct.unpack_from("<2I", b, 2116)
+dtb_addr, = struct.unpack_from("<I", b, 2124)
+info = [
+    f"header_version={version}",
+    f"page_size={page}",
+    f"kernel_size={kernel_size}",
+    f"ramdisk_size={ramdisk_size}",
+    f"ramdisk_addr=0x{ramdisk_addr:x}",
+    f"header_size={header_size}",
+    f"dtb_size={dtb_size}",
+    f"dtb_addr=0x{dtb_addr:x}",
+    f"name={name}",
+    f"cmdline={cmdline}",
+]
+ramdisk_base = math.ceil(header_size / page) * page
+if version >= 4:
+    if len(b) < ramdisk_base + ramdisk_size:
+        raise SystemExit("vendor_boot is shorter than the declared ramdisk")
+    ramdisk = b[ramdisk_base:ramdisk_base + ramdisk_size]
+    pathlib.Path("analysis/work/vendor_boot/vendor_ramdisk.bin").write_bytes(ramdisk)
+    table_base = math.ceil((ramdisk_base + ramdisk_size + dtb_size) / page) * page
+    table_entry_size = 108
+    table_count = struct.unpack_from("<I", b, table_base)[0] if table_base + 4 <= len(b) else 0
+    table_entry_size_file = struct.unpack_from("<I", b, table_base + 4)[0] if table_base + 8 <= len(b) else 0
+    info += [f"ramdisk_base=0x{ramdisk_base:x}", f"ramdisk_table_base=0x{table_base:x}", f"ramdisk_table_count={table_count}", f"ramdisk_table_entry_size={table_entry_size_file}"]
+    if table_entry_size_file == table_entry_size:
+        for i in range(table_count):
+            off = table_base + 8 + i * table_entry_size
+            if off + table_entry_size > len(b):
+                break
+            size, roff, rtype = struct.unpack_from("<III", b, off)
+            rname = b[off+12:off+44].split(b"\\0", 1)[0].decode("utf-8", "replace")
+            info.append(f"ramdisk_fragment[{i}]: size={size} offset=0x{roff:x} type={rtype} name={rname}")
+            frag = b[ramdisk_base + roff:ramdisk_base + roff + size]
+            pathlib.Path(f"analysis/work/vendor_boot/ramdisk_fragment_{i}_{rname or rtype}.bin").write_bytes(frag)
+else:
+    ramdisk = b[ramdisk_base:ramdisk_base + ramdisk_size]
+    pathlib.Path("analysis/work/vendor_boot/vendor_ramdisk.bin").write_bytes(ramdisk)
+    info.append(f"ramdisk_base=0x{ramdisk_base:x}")
+pathlib.Path("analysis/report/vendor_boot_header.txt").write_text("\\n".join(info) + "\\n")
+'
+            cat analysis/report/vendor_boot_header.txt
             cat analysis/report/vendor_boot_header.txt >> analysis/report/01-image-inventory.md
-            file analysis/work/vendor_boot/vendor_ramdisk.bin >> analysis/report/01-image-inventory.md
-            mkdir -p analysis/work/vendor_boot/ramdisk
-            if file analysis/work/vendor_boot/vendor_ramdisk.bin | grep -qi gzip; then
-              gzip -dc analysis/work/vendor_boot/vendor_ramdisk.bin | cpio -itv > analysis/report/vendor_ramdisk_files.txt
-            elif file analysis/work/vendor_boot/vendor_ramdisk.bin | grep -qi lz4; then
-              lz4 -d analysis/work/vendor_boot/vendor_ramdisk.bin analysis/work/vendor_boot/ramdisk.cpio
-              cpio -itv < analysis/work/vendor_boot/ramdisk.cpio > analysis/report/vendor_ramdisk_files.txt
-            elif file analysis/work/vendor_boot/vendor_ramdisk.bin | grep -qi zstd; then
-              zstd -dc analysis/work/vendor_boot/vendor_ramdisk.bin | cpio -itv > analysis/report/vendor_ramdisk_files.txt
-            else
-              cpio -itv < analysis/work/vendor_boot/vendor_ramdisk.bin > analysis/report/vendor_ramdisk_files.txt
-            fi
+
+            for ramdisk_bin in analysis/work/vendor_boot/vendor_ramdisk.bin analysis/work/vendor_boot/ramdisk_fragment_*.bin; do
+              [ -f "$ramdisk_bin" ] || continue
+              out="analysis/report/$(basename "$ramdisk_bin").txt"
+              echo "### $ramdisk_bin" >> "$out"
+              file "$ramdisk_bin" >> "$out"
+              if file "$ramdisk_bin" | grep -qi gzip; then
+                gzip -dc "$ramdisk_bin" 2>/dev/null | cpio -itv >> "$out" 2>&1
+              elif file "$ramdisk_bin" | grep -qi lz4; then
+                lz4 -dc "$ramdisk_bin" 2>/dev/null | cpio -itv >> "$out" 2>&1
+              elif file "$ramdisk_bin" | grep -qi zstd; then
+                zstd -dc "$ramdisk_bin" 2>/dev/null | cpio -itv >> "$out" 2>&1
+              else
+                cpio -itv < "$ramdisk_bin" >> "$out" 2>&1
+              fi
+            done
+            cat analysis/report/vendor_ramdisk*.txt 2>/dev/null > analysis/report/vendor_ramdisk_files.txt || true
           fi
 
       - name: Static FBE and keymaster inventory
@@ -221,7 +258,7 @@ EOF
 
       - name: Publish analysis release
         env:
-          GH_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: beryl-ofox16-analysis
         run: |
           gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes || true
