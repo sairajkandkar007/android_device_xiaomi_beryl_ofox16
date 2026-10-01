@@ -87,9 +87,9 @@ if b[:8] != b"VNDRBOOT":
     raise SystemExit(f"Unexpected vendor_boot magic: {b[:8]!r}")
 version, page, kernel_size, ramdisk_size = struct.unpack_from("<4I", b, 8)
 ramdisk_addr, = struct.unpack_from("<I", b, 24)
-cmdline = b[48:2096].split(b"\\0", 1)[0].decode("utf-8", "replace")
+cmdline = b[48:2096].split(b"\0", 1)[0].decode("utf-8", "replace")
 tags_addr, = struct.unpack_from("<I", b, 2096)
-name = b[2100:2116].split(b"\\0", 1)[0].decode("utf-8", "replace")
+name = b[2100:2116].split(b"\0", 1)[0].decode("utf-8", "replace")
 header_size, dtb_size = struct.unpack_from("<2I", b, 2116)
 dtb_addr, = struct.unpack_from("<I", b, 2124)
 info = [
@@ -106,25 +106,25 @@ info = [
 ]
 ramdisk_base = math.ceil(header_size / page) * page
 if version >= 4:
+    table_size, table_count, table_entry_size, bootconfig_size = struct.unpack_from("<4I", b, 2128)
+    info += [f"ramdisk_base=0x{ramdisk_base:x}", f"vendor_ramdisk_table_size={table_size}", f"vendor_ramdisk_table_entry_num={table_count}", f"vendor_ramdisk_table_entry_size={table_entry_size}", f"bootconfig_size={bootconfig_size}"]
     if len(b) < ramdisk_base + ramdisk_size:
         raise SystemExit("vendor_boot is shorter than the declared ramdisk")
     ramdisk = b[ramdisk_base:ramdisk_base + ramdisk_size]
     pathlib.Path("analysis/work/vendor_boot/vendor_ramdisk.bin").write_bytes(ramdisk)
     table_base = math.ceil((ramdisk_base + ramdisk_size + dtb_size) / page) * page
-    table_entry_size = 108
-    table_count = struct.unpack_from("<I", b, table_base)[0] if table_base + 4 <= len(b) else 0
-    table_entry_size_file = struct.unpack_from("<I", b, table_base + 4)[0] if table_base + 8 <= len(b) else 0
-    info += [f"ramdisk_base=0x{ramdisk_base:x}", f"ramdisk_table_base=0x{table_base:x}", f"ramdisk_table_count={table_count}", f"ramdisk_table_entry_size={table_entry_size_file}"]
-    if table_entry_size_file == table_entry_size:
+    info.append(f"ramdisk_table_base=0x{table_base:x}")
+    if table_entry_size == 108 and table_count * table_entry_size <= table_size:
         for i in range(table_count):
-            off = table_base + 8 + i * table_entry_size
+            off = table_base + i * table_entry_size
             if off + table_entry_size > len(b):
                 break
             size, roff, rtype = struct.unpack_from("<III", b, off)
-            rname = b[off+12:off+44].split(b"\\0", 1)[0].decode("utf-8", "replace")
+            rname = b[off+12:off+44].split(b"\0", 1)[0].decode("utf-8", "replace")
             info.append(f"ramdisk_fragment[{i}]: size={size} offset=0x{roff:x} type={rtype} name={rname}")
-            frag = b[ramdisk_base + roff:ramdisk_base + roff + size]
-            pathlib.Path(f"analysis/work/vendor_boot/ramdisk_fragment_{i}_{rname or rtype}.bin").write_bytes(frag)
+            if roff + size <= len(ramdisk):
+                frag = ramdisk[roff:roff + size]
+                pathlib.Path("analysis/work/vendor_boot/ramdisk_fragment_%d_%s.bin" % (i, rname or str(rtype))).write_bytes(frag)
 else:
     ramdisk = b[ramdisk_base:ramdisk_base + ramdisk_size]
     pathlib.Path("analysis/work/vendor_boot/vendor_ramdisk.bin").write_bytes(ramdisk)
