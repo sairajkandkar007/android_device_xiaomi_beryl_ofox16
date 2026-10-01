@@ -142,14 +142,22 @@ jobs:
           ls -lh             prebuilt/vendor_boot.img             prebuilt/kernel             prebuilt/dtb.img             prebuilt/dtbo.img             prebuilt/modules/*.ko             prebuilt/sepolicy/vendor_sepolicy.cil             prebuilt/bootctrl/android.hardware.boot-service.mtk
           sha256sum             prebuilt/vendor_boot.img             prebuilt/kernel             prebuilt/dtb.img             prebuilt/dtbo.img             prebuilt/modules/*.ko             prebuilt/sepolicy/vendor_sepolicy.cil             prebuilt/bootctrl/android.hardware.boot-service.mtk
 
-      - name: Commit stock prebuilts
+      - name: Push extracted recovery prebuilts to device tree
         run: |
-          git add .gitattributes             prebuilt/vendor_boot.img             prebuilt/kernel             prebuilt/dtb.img             prebuilt/dtbo.img             prebuilt/modules/*.ko             prebuilt/sepolicy/vendor_sepolicy.cil             prebuilt/bootctrl/android.hardware.boot-service.mtk
+          git add .gitattributes prebuilt/
+
+          echo "Files staged for device tree:"
+          git status --short
 
           if git diff --cached --quiet; then
-            echo "No prebuilt changes."
+            echo "No extracted prebuilt changes."
             exit 0
           fi
 
           git commit -m "Add stock Android 16 recovery prebuilts [stock-sync]"
+
+          # Explicitly upload Git LFS objects before updating main.
+          git lfs push origin HEAD
+
+          # Push the commit and all extracted recovery prebuilts to main.
           git push origin HEAD:main
