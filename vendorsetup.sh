@@ -39,6 +39,8 @@ if [ "${1:-}" = "$FDEVICE" ] || [ "${FOX_BUILD_DEVICE:-}" = "$FDEVICE" ]; then
 
     # Android 16 / API 36 support.
     export FOX_ADD_API_V36_PREBUILTS=2
+    # Beryl stock exposes Keymaster 4.0/4.1 compatibility plus KeyMint V4.
+    # OrangeFox uses 4.0 as the fallback when the ROM property cannot be read.
     export OF_DEFAULT_KEYMASTER_VERSION=4.0
     export OF_DONT_SUBSTITUTE_PERMISSIONS=1
 
