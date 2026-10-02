@@ -220,7 +220,7 @@ jobs:
 
       - name: Search and copy stock decryption support
         run: |
-          rm -rf prebuilt/decryption work/system
+          rm -rf prebuilt/decryption work/system work/key_service_scan.txt work/key_service_deps.txt
           mkdir -p prebuilt/decryption/vendor prebuilt/decryption/system prebuilt/decryption/config
 
           # Extract vendor here as well because this step runs before the
@@ -255,42 +255,34 @@ jobs:
               done
           fi
 
-          # Recovery-relevant fstab/configuration entries containing encryption,
-          # metadata, key-directory, fscrypt or KeyMint settings.
-          find work/vendor/etc -type f \
-            -regextype posix-extended \
-            -iregex '.*(fstab|vold|crypt|fscrypt|keymint|keymaster|gatekeeper|keystore|metadata).*' \
-            -print0 2>/dev/null | while IFS= read -r -d '' src; do
-              rel=${src#work/vendor/etc/}
-              mkdir -p "prebuilt/decryption/config/$(dirname "$rel")"
-              cp -a "$src" "prebuilt/decryption/config/$rel"
-            done
+          # Keep only recovery-relevant filesystem/encryption configuration.
+          find work/vendor/etc -type f \(             -name 'fstab*' -o -name 'vold*.rc' -o -name '*fscrypt*' -o             -name '*keymint*.xml' -o -name '*keymaster*.xml' -o             -name '*gatekeeper*.xml' -o -name '*keystore*.xml'           \) -print0 2>/dev/null | while IFS= read -r -d '' src; do
+            rel=${src#work/vendor/etc/}
+            mkdir -p "prebuilt/decryption/config/fstab/$(dirname "$rel")"
+            cp -a "$src" "prebuilt/decryption/config/fstab/$rel"
+          done
 
-          # Copy matching system configuration as well.
           if [ -d work/system/etc ]; then
-            find work/system/etc -type f \
-              -regextype posix-extended \
-              -iregex '.*(fstab|vold|crypt|fscrypt|keymint|keymaster|gatekeeper|keystore|metadata).*' \
-              -print0 2>/dev/null | while IFS= read -r -d '' src; do
-                rel=${src#work/system/etc/}
-                mkdir -p "prebuilt/decryption/config/system/$(dirname "$rel")"
-                cp -a "$src" "prebuilt/decryption/config/system/$rel"
-              done
+            find work/system/etc -type f \(               -name 'fstab*' -o -name 'vold*.rc' -o -name '*fscrypt*' -o               -name '*keymint*.xml' -o -name '*keymaster*.xml' -o               -name '*gatekeeper*.xml' -o -name '*keystore*.xml'             \) -print0 2>/dev/null | while IFS= read -r -d '' src; do
+              rel=${src#work/system/etc/}
+              mkdir -p "prebuilt/decryption/config/fstab/$(dirname "$rel")"
+              cp -a "$src" "prebuilt/decryption/config/fstab/$rel"
+            done
           fi
 
           # Scan vendor/system init scripts for the actual KeyMint, Keymaster,
           # Gatekeeper and TEE services. Do not guess service binary names:
           # parse the stock .rc "service <name> <binary>" declarations and
           # copy the referenced executable when it exists.
-          mkdir -p prebuilt/decryption/config/vendor_init prebuilt/decryption/config/system_init
+          mkdir -p prebuilt/decryption/services/init/vendor prebuilt/decryption/services/init/system
           : > work/key_service_scan.txt
 
           while IFS= read -r rc; do
             case "$rc" in
               *keymint*.rc|*keymaster*.rc|*gatekeeper*.rc|*tee-supplicant*.rc|*keystore*.rc|*vold*.rc)
                 rel=${rc#work/vendor/etc/init/}
-                mkdir -p "prebuilt/decryption/config/vendor_init/$(dirname "$rel")"
-                cp -a "$rc" "prebuilt/decryption/config/vendor_init/$rel"
+                mkdir -p "prebuilt/decryption/services/init/vendor/$(dirname "$rel")"
+                cp -a "$rc" "prebuilt/decryption/services/init/vendor/$rel"
                 printf 'VENDOR_RC %s\n' "$rel" >> work/key_service_scan.txt
                 ;;
             esac
@@ -302,8 +294,8 @@ jobs:
                   src="work$service_bin"
                   if [ -f "$src" ]; then
                     root_rel=${service_bin#/}
-                    mkdir -p "prebuilt/decryption/config/service_bins/$(dirname "$root_rel")"
-                    cp -a "$src" "prebuilt/decryption/config/service_bins/$root_rel"
+                    mkdir -p "prebuilt/decryption/services/bins/$(dirname "$root_rel")"
+                    cp -a "$src" "prebuilt/decryption/services/bins/$root_rel"
                     printf 'SERVICE %s %s\n' "$service_name" "$service_bin" >> work/key_service_scan.txt
                   else
                     printf 'MISSING_SERVICE_BINARY %s %s\n' "$service_name" "$service_bin" >> work/key_service_scan.txt
@@ -318,8 +310,8 @@ jobs:
               case "$rc" in
                 *keymint*.rc|*keymaster*.rc|*gatekeeper*.rc|*tee-supplicant*.rc|*keystore*.rc|*vold*.rc)
                   rel=${rc#work/system/etc/init/}
-                  mkdir -p "prebuilt/decryption/config/system_init/$(dirname "$rel")"
-                  cp -a "$rc" "prebuilt/decryption/config/system_init/$rel"
+                  mkdir -p "prebuilt/decryption/services/init/system/$(dirname "$rel")"
+                  cp -a "$rc" "prebuilt/decryption/services/init/system/$rel"
                   printf 'SYSTEM_RC %s\n' "$rel" >> work/key_service_scan.txt
                   ;;
               esac
@@ -328,16 +320,16 @@ jobs:
 
           echo "=== KeyMint/Keymaster/Gatekeeper/TEE service scan ==="
           cat work/key_service_scan.txt 2>/dev/null || true
-          cp work/key_service_scan.txt prebuilt/decryption/config/key-service-scan.txt
+          cp work/key_service_scan.txt prebuilt/decryption/services/key-service-scan.txt
 
           echo "=== Discovered key-service payload ==="
-          find prebuilt/decryption/config/vendor_init \
-               prebuilt/decryption/config/system_init \
-               prebuilt/decryption/config/service_bins \
+          find prebuilt/decryption/services/init/vendor \
+               prebuilt/decryption/services/init/system \
+               prebuilt/decryption/services/bins \
                -type f -print 2>/dev/null | sort || true
 
           echo "=== Resolve ELF dependencies of discovered key services ==="
-          mkdir -p prebuilt/decryption/config/service_deps
+          mkdir -p prebuilt/decryption/services/deps
           : > work/key_service_deps.txt
 
           # Follow DT_NEEDED recursively from the exact stock service binaries.
@@ -362,7 +354,7 @@ jobs:
               seen_deps["$key"]=1
 
               local root_rel="${src#work/}"
-              local out="prebuilt/decryption/config/service_deps/$root_rel"
+              local out="prebuilt/decryption/services/deps/$root_rel"
               mkdir -p "$(dirname "$out")"
               cp -a "$src" "$out"
 
@@ -420,12 +412,12 @@ jobs:
             echo "readelf is unavailable; skipping ELF dependency resolution."
           fi
 
-          printf '%s\n'             "ELF dependency scan complete."             "Resolved payload:"             > prebuilt/decryption/config/service_deps/README.txt
-          find prebuilt/decryption/config/service_deps -type f             -printf '%P\n' | sort >> prebuilt/decryption/config/service_deps/README.txt
+          printf '%s\n'             "ELF dependency scan complete."             "Resolved payload:"             > prebuilt/decryption/services/deps/README.txt
+          find prebuilt/decryption/services/deps -type f             -printf '%P\n' | sort >> prebuilt/decryption/services/deps/README.txt
 
-          cp work/key_service_deps.txt prebuilt/decryption/config/key-service-deps.txt
+          cp work/key_service_deps.txt prebuilt/decryption/services/key-service-deps.txt
           echo "=== Key-service ELF dependency scan ==="
-          cat prebuilt/decryption/config/key-service-deps.txt 2>/dev/null || true
+          cat prebuilt/decryption/services/key-service-deps.txt 2>/dev/null || true
 
           # Search policy for decryption-related domains/rules; retain the stock
           # policy files as evidence rather than modifying policy automatically.
