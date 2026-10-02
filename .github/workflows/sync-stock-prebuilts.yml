@@ -29,6 +29,7 @@ jobs:
           git lfs track "prebuilt/vendor_boot.img"
           git lfs track "prebuilt/kernel"
           git lfs track "prebuilt/dtb.img"
+          git lfs track "prebuilt/dtbs/**"
           git lfs track "prebuilt/dtbo.img"
           git lfs track "prebuilt/modules/**"
           git lfs track "prebuilt/wlan/**"
@@ -120,6 +121,14 @@ jobs:
             echo "No DTB was extracted from boot.img or vendor_boot.img."
             exit 1
           fi
+
+      - name: Materialize stock DTB for OrangeFox
+        run: |
+          set -euo pipefail
+          mkdir -p prebuilt/dtbs
+          test -s prebuilt/dtb.img
+          cp -f prebuilt/dtb.img prebuilt/dtbs/beryl.dtb
+          ls -lh prebuilt/dtbs/beryl.dtb
 
       - name: Extract selected vendor DLKM modules
         run: |
