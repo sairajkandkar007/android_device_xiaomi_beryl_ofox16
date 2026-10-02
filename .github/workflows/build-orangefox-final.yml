@@ -131,7 +131,7 @@ jobs:
           df -h /
           
           set +e
-          m recoveryimage -j"$BUILD_JOBS" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+          m vendorboot -j"$BUILD_JOBS" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
           BUILD_STATUS=${PIPESTATUS[0]}
           set -e
           
