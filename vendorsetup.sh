@@ -39,6 +39,7 @@ if [ "${1:-}" = "$FDEVICE" ] || [ "${FOX_BUILD_DEVICE:-}" = "$FDEVICE" ]; then
 
     # Android 16 / API 36 support.
     export FOX_ADD_API_V36_PREBUILTS=2
+    export OF_DEFAULT_KEYMASTER_VERSION=4.0
     export OF_DONT_SUBSTITUTE_PERMISSIONS=1
 
     # Stock userdata is F2FS with Android FBE/casefolding support.
