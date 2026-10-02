@@ -16,9 +16,9 @@ env:
   DEVICE_PATH: device/xiaomi/beryl
   LUNCH_TARGET: fox_beryl-ap2a-eng
   BUILD_JOBS: "2"
-  REPO_JOBS: "8"
+  REPO_JOBS: "16"
   CCACHE_DIR: ${{ github.workspace }}/.ccache
-  CCACHE_SIZE: "20G"
+  CCACHE_SIZE: "50G"
 
 jobs:
   build:
@@ -75,10 +75,10 @@ jobs:
           mkdir -p "$FOX_ROOT"
           cd "$FOX_ROOT"
           repo init -u https://gitlab.com/OrangeFox/Manifest.git -b "$FOX_BRANCH" --depth=1
-          # Faster first sync: partial clone + shallow/current branch + parallel fetches.
+          # OrangeFox/AOSP-style shallow sync: parallel projects + force-sync.
+          # The manifest is already initialized with --depth=1 above.
           repo sync --current-branch --no-tags --optimized-fetch --prune \
-            --partial-clone --clone-filter=blob:limit=10M \
-            -j"$REPO_JOBS"
+            --force-sync -j"$(nproc --all)"
           echo "✓ Sync complete"
           du -sh "$FOX_ROOT"
 
@@ -96,7 +96,7 @@ jobs:
           set -euxo pipefail
           mkdir -p "$CCACHE_DIR"
           ccache --set-config=cache_dir="$CCACHE_DIR"
-          ccache --set-config=max_size="$CCACHE_SIZE"
+          ccache -M "$CCACHE_SIZE"
           ccache --set-config=compression=true
           ccache --zero-stats
           echo "USE_CCACHE=1" >> "$GITHUB_ENV"
