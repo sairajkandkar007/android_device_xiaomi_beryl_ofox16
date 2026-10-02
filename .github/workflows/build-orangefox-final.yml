@@ -193,7 +193,7 @@ jobs:
           df -h /
           
           set +e
-          m vendorboot -j"$BUILD_JOBS" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+          m recoveryimage -j"$BUILD_JOBS" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
           BUILD_STATUS=${PIPESTATUS[0]}
           set -e
           
@@ -283,7 +283,98 @@ jobs:
           
           python3 "$DEVICE_TREE/scripts/analyze_vendor_boot.py" \
             "$WORK/new/vendor_boot.img" "$WORK/final-analysis" "$WORK/final-report"
-          grep -Eq 'raindisk_fragment\[1\]:.*type=2 name=recovery$' "$WORK/final-report"
+          grep -Eq 'ramdisk_fragment\[1\]:.*type=2 name=recovery
+          
+          cp -f "$WORK/new/vendor_boot.img" "$OUT/vendor_boot.img"
+          echo "✓ Merge complete"
+
+      - name: Audit vendor_boot
+        timeout-minutes: 15
+        if: success()
+        working-directory: ${{ env.FOX_ROOT }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          OUT="out/target/product/beryl"
+          REPORT="$GITHUB_WORKSPACE/vendor_boot-audit.txt"
+          test -s "$OUT/vendor_boot.img"
+          python3 "$GITHUB_WORKSPACE/scripts/audit_vendor_boot.py" \
+            "$OUT/vendor_boot.img" "$GITHUB_WORKSPACE/prebuilt/vendor_boot.img" "$REPORT"
+          test -s "$REPORT"
+          grep -q '^RESULT=PASS$' "$REPORT"
+          echo "✓ Audit passed"
+
+      - name: Generate checksums
+        if: success()
+        working-directory: ${{ env.FOX_ROOT }}/out/target/product/beryl
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sha256sum recovery.img vendor_boot.img > "$GITHUB_WORKSPACE/SHA256SUMS"
+          md5sum recovery.img vendor_boot.img > "$GITHUB_WORKSPACE/MD5SUMS"
+          ls -lah
+          echo "=== SHA256 Checksums ==="
+          cat "$GITHUB_WORKSPACE/SHA256SUMS"
+
+      - name: Prepare artifacts
+        if: success()
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ARTIFACT_DIR="${{ github.workspace }}/artifacts"
+          mkdir -p "$ARTIFACT_DIR"
+          cp "${{ env.FOX_ROOT }}/out/target/product/beryl/recovery.img" "$ARTIFACT_DIR/"
+          cp "${{ env.FOX_ROOT }}/out/target/product/beryl/vendor_boot.img" "$ARTIFACT_DIR/"
+          cp "${{ github.workspace }}/SHA256SUMS" "$ARTIFACT_DIR/"
+          cp "${{ github.workspace }}/MD5SUMS" "$ARTIFACT_DIR/"
+          echo "Artifacts ready:"
+          ls -lah "$ARTIFACT_DIR/"
+          du -sh "$ARTIFACT_DIR/"
+
+      - name: Show summary
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          echo "=== Build Summary ==="
+          df -h /
+          free -h
+          echo "=== Build log (last 200 lines) ==="
+          tail -n 200 "${{ github.workspace }}/build.log" 2>/dev/null || echo "No log"
+
+      - name: Upload logs
+        if: always()
+        timeout-minutes: 10
+        uses: actions/upload-artifact@v4
+        with:
+          name: orangefox-beryl-logs
+          path: |
+            ${{ github.workspace }}/build.log
+            ${{ github.workspace }}/vendor_boot-audit.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload images
+        if: success()
+        timeout-minutes: 30
+        uses: actions/upload-artifact@v4
+        with:
+          name: orangefox-beryl-images
+          path: ${{ github.workspace }}/artifacts/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          echo "=== Cleanup ==="
+          rm -rf "${{ env.FOX_ROOT }}"
+          sync
+          df -h /
+          echo "✓ Done"
+ "$WORK/final-report"
           
           cp -f "$WORK/new/vendor_boot.img" "$OUT/vendor_boot.img"
           echo "✓ Merge complete"
