@@ -31,10 +31,6 @@ PRODUCT_PACKAGES += \
     android.hardware.security.secureclock \
     android.hardware.security.sharedsecret
 
-# Stock Beryl first-stage fstab is supplied by the device tree.
-PRODUCT_PACKAGES += \
-    fstab.mt6855.vendor_ramdisk
-
 # Recovery-side filesystem utilities.
 PRODUCT_PACKAGES += \
     e2fsck.vendor_ramdisk \
