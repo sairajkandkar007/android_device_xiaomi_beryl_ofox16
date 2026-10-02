@@ -23,9 +23,6 @@ fi
 if [ "${1:-}" = "$FDEVICE" ] || [ "${FOX_BUILD_DEVICE:-}" = "$FDEVICE" ]; then
     export FOX_BUILD_DEVICE="$FDEVICE"
 
-    # Modern Android lunch target.
-    add_lunch_combo fox_beryl-ap2a-eng
-
     # Stock Android 16 Beryl recovery is carried by vendor_boot's vendor ramdisk.
     export FOX_AB_DEVICE=1
     export FOX_VIRTUAL_AB_DEVICE=1
@@ -35,14 +32,13 @@ if [ "${1:-}" = "$FDEVICE" ] || [ "${FOX_BUILD_DEVICE:-}" = "$FDEVICE" ]; then
     export OF_FORCE_PREBUILT_KERNEL=1
 
     # Universal/non-ROM-specific OrangeFox build.
+    # FOX_VIRTUAL_AB_DEVICE also enables the appropriate A/B/VAB defaults.
     export FOX_VANILLA_BUILD=1
 
     # Android 16 / API 36 support.
     export FOX_ADD_API_V36_PREBUILTS=2
-    # Beryl stock exposes Keymaster 4.0/4.1 compatibility plus KeyMint V4.
-    # OrangeFox uses 4.0 as the fallback when the ROM property cannot be read.
+    # Beryl stock exposes Keymaster 4.x compatibility.
     export OF_DEFAULT_KEYMASTER_VERSION=4.0
-    export OF_DONT_SUBSTITUTE_PERMISSIONS=1
 
     # Stock userdata is F2FS with Android FBE/casefolding support.
     export OF_FORCE_DATA_FORMAT_F2FS=1
