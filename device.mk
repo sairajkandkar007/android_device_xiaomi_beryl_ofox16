@@ -33,6 +33,11 @@ PRODUCT_PACKAGES += \
     android.hardware.security.secureclock \
     android.hardware.security.sharedsecret
 
+# Recovery-side crypto/filesystem utilities.
+# These are the framework-side components; device-specific KeyMint/Gatekeeper
+# services and their stock dependencies are discovered from the exact Beryl
+# vendor_boot/vendor/system images by sync-stock-prebuilts.yml.
+
 # Recovery-side filesystem utilities.
 PRODUCT_PACKAGES += \
     e2fsck.vendor_ramdisk \
