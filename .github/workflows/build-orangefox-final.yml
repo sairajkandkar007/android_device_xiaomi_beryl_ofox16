@@ -15,8 +15,10 @@ env:
   FOX_ROOT: ${{ github.workspace }}/orangefox_16
   DEVICE_PATH: device/xiaomi/beryl
   LUNCH_TARGET: fox_beryl-ap2a-eng
-  BUILD_JOBS: "1"
-  REPO_JOBS: "1"
+  BUILD_JOBS: "2"
+  REPO_JOBS: "8"
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
+  CCACHE_SIZE: "20G"
 
 jobs:
   build:
@@ -73,9 +75,35 @@ jobs:
           mkdir -p "$FOX_ROOT"
           cd "$FOX_ROOT"
           repo init -u https://gitlab.com/OrangeFox/Manifest.git -b "$FOX_BRANCH" --depth=1
-          repo sync --current-branch --no-tags --optimized-fetch --prune -j"$REPO_JOBS"
+          # Faster first sync: partial clone + shallow/current branch + parallel fetches.
+          repo sync --current-branch --no-tags --optimized-fetch --prune \
+            --partial-clone --clone-filter=blob:limit=10M \
+            -j"$REPO_JOBS"
           echo "✓ Sync complete"
           du -sh "$FOX_ROOT"
+
+      - name: Restore ccache
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: orangefox-ccache-${{ env.FOX_BRANCH }}-${{ runner.os }}-${{ hashFiles('device/xiaomi/beryl/BoardConfig.mk', 'device/xiaomi/beryl/fox_beryl.mk', 'device/xiaomi/beryl/vendorsetup.sh') }}
+          restore-keys: |
+            orangefox-ccache-${{ env.FOX_BRANCH }}-${{ runner.os }}-
+
+      - name: Configure ccache
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p "$CCACHE_DIR"
+          ccache --set-config=cache_dir="$CCACHE_DIR"
+          ccache --set-config=max_size="$CCACHE_SIZE"
+          ccache --set-config=compression=true
+          ccache --zero-stats
+          echo "USE_CCACHE=1" >> "$GITHUB_ENV"
+          echo "CCACHE_DIR=$CCACHE_DIR" >> "$GITHUB_ENV"
+          echo "CCACHE_EXEC=$(command -v ccache)" >> "$GITHUB_ENV"
+          ccache -p
+          ccache -s
 
       - name: Setup Magisk
         shell: bash
@@ -103,6 +131,22 @@ jobs:
           test -f "$FOX_ROOT/$DEVICE_PATH/BoardConfig.mk"
           echo "✓ Device tree added"
 
+      - name: Stage vendor_boot reference
+        working-directory: ${{ env.FOX_ROOT }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          OUT="out/target/product/beryl"
+          STOCK="$GITHUB_WORKSPACE/prebuilt/vendor_boot.img"
+          test -s "$STOCK"
+          mkdir -p "$OUT"
+          # OFOX16 validates this path inside Fox_After_Recovery_Image.
+          # The final stock-platform/OrangeFox-recovery vendor_boot is rebuilt
+          # by the existing merge step after recovery.img is produced.
+          cp -f "$STOCK" "$OUT/vendor_boot.img"
+          test -s "$OUT/vendor_boot.img"
+          echo "✓ Stock vendor_boot staged for OFOX16 packaging hook"
+
       - name: Build recovery (SINGLE JOB - LOW MEMORY MODE)
         timeout-minutes: 180
         working-directory: ${{ env.FOX_ROOT }}
@@ -126,7 +170,9 @@ jobs:
           
           echo "=== Starting Build ==="
           echo "Started: $(date -u)"
-          echo "Build jobs: $BUILD_JOBS (SINGLE JOB MODE)"
+          echo "Build jobs: $BUILD_JOBS"
+          echo "ccache: $(ccache --version | head -n1)"
+          ccache -s
           free -h
           df -h /
           
