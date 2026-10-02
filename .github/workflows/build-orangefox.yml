@@ -134,7 +134,7 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p "$FOX_ROOT/$DEVICE_PATH"
-          rsync -a --exclude='.git/' --exclude='.github/' "$GITHUB_WORKSPACE/" "$FOX_ROOT/$DEVICE_PATH/"
+          rsync -a --exclude='.git/' --exclude='.github/' --exclude='orangefox_16/' "$GITHUB_WORKSPACE/" "$FOX_ROOT/$DEVICE_PATH/"
           test -f "$FOX_ROOT/$DEVICE_PATH/AndroidProducts.mk"
           test -f "$FOX_ROOT/$DEVICE_PATH/fox_beryl.mk"
           test -f "$FOX_ROOT/$DEVICE_PATH/BoardConfig.mk"
