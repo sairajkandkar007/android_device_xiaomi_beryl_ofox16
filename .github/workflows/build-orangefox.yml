@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  FOX_BRANCH: "16.0"
+  FOX_BRANCH: "fox_16.0"
   FOX_ROOT: ${{ github.workspace }}/orangefox_16
   DEVICE_PATH: device/xiaomi/beryl
   LUNCH_TARGET: fox_beryl-ap2a-eng
