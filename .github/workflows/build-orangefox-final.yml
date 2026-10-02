@@ -388,10 +388,6 @@ jobs:
           sync
           df -h /
           echo "✓ Done"
- "$WORK/final-report"
-          
-          cp -f "$WORK/new/vendor_boot.img" "$OUT/vendor_boot.img"
-          echo "✓ Merge complete"
 
       - name: Audit vendor_boot
         timeout-minutes: 15
