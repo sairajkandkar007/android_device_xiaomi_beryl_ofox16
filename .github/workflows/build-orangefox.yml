@@ -143,7 +143,8 @@ jobs:
         working-directory: ${{ env.FOX_ROOT }}
         shell: bash
         run: |
-          set -euxo pipefail
+          set -eo pipefail
+          set +u
           source build/envsetup.sh
           lunch "$LUNCH_TARGET"
           test "$TARGET_PRODUCT" = "fox_beryl"
@@ -153,7 +154,8 @@ jobs:
         working-directory: ${{ env.FOX_ROOT }}
         shell: bash
         run: |
-          set -euxo pipefail
+          set -eo pipefail
+          set +u
           source build/envsetup.sh
           lunch "$LUNCH_TARGET"
           export USE_CCACHE=1
