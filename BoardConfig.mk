@@ -45,7 +45,6 @@ TARGET_PREBUILT_DTB := $(DEVICE_PATH)/prebuilt/dtb.img
 
 # Android 16 vendor_boot v4 recovery integration.
 BOARD_PREBUILT_DTBOIMAGE := $(DEVICE_PATH)/prebuilt/dtbo.img
-BOARD_PREBUILT_DTBIMAGE_DIR := $(DEVICE_PATH)/prebuilt/dtbs
 
 # Stock boot/vendor_boot partition size
 BOARD_BOOTIMAGE_PARTITION_SIZE := 134217728
