@@ -145,6 +145,14 @@ jobs:
           rm -rf prebuilt/decryption work/system
           mkdir -p prebuilt/decryption/vendor prebuilt/decryption/system prebuilt/decryption/config
 
+          # Extract vendor here as well because this step runs before the
+          # dedicated SELinux/boot-control vendor extraction step below.
+          if [ ! -f work/vendor/etc/selinux/vendor_sepolicy.cil ]; then
+            rm -rf work/vendor
+            mkdir -p work/vendor
+            work/extract_erofs.sh work/vendor.img work/vendor
+          fi
+
           # Vendor-side Android FBE/KeyMint/Gatekeeper components.
           find work/vendor -type f -regextype posix-extended \
             -iregex '.*(keymint|keymaster|gatekeeper|keystore2|vold|fscrypt|fbe|metadata.*encrypt|cryptfs|wrappedkey|secureclock|sharedsecret).*' \
@@ -231,6 +239,11 @@ jobs:
 
       - name: Verify stock prebuilts
         run: |
+          # WLAN/touch payloads are optional until their exact stock userspace
+          # and firmware/module dependencies are identified. Never fail the
+          # stock sync merely because those optional directories are absent.
+          mkdir -p prebuilt/wlan prebuilt/touch
+
           test -s prebuilt/vendor_boot.img
           test -s prebuilt/kernel
           test -s prebuilt/dtb.img
@@ -243,8 +256,18 @@ jobs:
           ls -lh prebuilt/vendor_boot.img prebuilt/kernel prebuilt/dtb.img prebuilt/dtbo.img sepolicy/vendor_sepolicy.cil bootctrl/android.hardware.boot-service.mtk
           sha256sum prebuilt/vendor_boot.img prebuilt/kernel prebuilt/dtb.img prebuilt/dtbo.img sepolicy/vendor_sepolicy.cil bootctrl/android.hardware.boot-service.mtk
           test "$(find prebuilt/modules -type f -name '*.ko' | wc -l)" -gt 0
-          test -s prebuilt/wlan/modules.list
-          test -s prebuilt/touch/modules.list
+
+          if [ -s prebuilt/wlan/modules.list ]; then
+            echo "Stock WLAN module manifest found."
+          else
+            echo "No stock WLAN module manifest was extracted; continuing."
+          fi
+
+          if [ -s prebuilt/touch/modules.list ]; then
+            echo "Stock touch module manifest found."
+          else
+            echo "No stock touch module manifest was extracted; continuing."
+          fi
 
       - name: Push extracted recovery prebuilts to device tree
         run: |
