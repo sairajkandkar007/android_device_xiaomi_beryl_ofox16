@@ -141,8 +141,14 @@ jobs:
           test -s prebuilt/dtbo.img
           test -s sepolicy/vendor_sepolicy.cil
           test -s bootctrl/android.hardware.boot-service.mtk
-          ls -lh             prebuilt/vendor_boot.img             prebuilt/kernel             prebuilt/dtb.img             prebuilt/dtbo.img             prebuilt/modules/*.ko             sepolicy/vendor_sepolicy.cil             bootctrl/android.hardware.boot-service.mtk
-          sha256sum             prebuilt/vendor_boot.img             prebuilt/kernel             prebuilt/dtb.img             prebuilt/dtbo.img             prebuilt/modules/*.ko             sepolicy/vendor_sepolicy.cil             bootctrl/android.hardware.boot-service.mtk
+          find prebuilt/modules -type f -name '*.ko' -print | sort
+          find prebuilt/wlan -type f -print | sort
+          find prebuilt/touch -type f -print | sort
+          ls -lh prebuilt/vendor_boot.img prebuilt/kernel prebuilt/dtb.img prebuilt/dtbo.img sepolicy/vendor_sepolicy.cil bootctrl/android.hardware.boot-service.mtk
+          sha256sum prebuilt/vendor_boot.img prebuilt/kernel prebuilt/dtb.img prebuilt/dtbo.img sepolicy/vendor_sepolicy.cil bootctrl/android.hardware.boot-service.mtk
+          test "$(find prebuilt/modules -type f -name '*.ko' | wc -l)" -gt 0
+          test -s prebuilt/wlan/modules.list
+          test -s prebuilt/touch/modules.list
 
       - name: Push extracted recovery prebuilts to device tree
         run: |
