@@ -317,6 +317,12 @@ jobs:
           cat work/key_service_scan.txt 2>/dev/null || true
           cp work/key_service_scan.txt prebuilt/decryption/config/key-service-scan.txt
 
+          echo "=== Discovered key-service payload ==="
+          find prebuilt/decryption/config/vendor_init \
+               prebuilt/decryption/config/system_init \
+               prebuilt/decryption/config/service_bins \
+               -type f -print 2>/dev/null | sort || true
+
           # Search policy for decryption-related domains/rules; retain the stock
           # policy files as evidence rather than modifying policy automatically.
           find work/vendor/etc/selinux -type f \
