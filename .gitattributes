@@ -8,3 +8,5 @@ bootctrl/android.hardware.boot-service.mtk filter=lfs diff=lfs merge=lfs -text
 prebuilt/modules/** filter=lfs diff=lfs merge=lfs -text
 prebuilt/wlan/** filter=lfs diff=lfs merge=lfs -text
 prebuilt/touch/** filter=lfs diff=lfs merge=lfs -text
+
+prebuilt/dtbs/** filter=lfs diff=lfs merge=lfs -text
