@@ -8,3 +8,8 @@ mtk_u_ether.ko
 mtk_usb_f_rndis.ko
 syscon-reboot-mode.ko
 gz_virtio_mod.ko
+
+# Stock Android 16 WLAN modules extracted from vendor_dlkm.
+wlan_drv_gen4m_6855.ko
+wmt_chrdev_wifi.ko
+wmt_drv.ko
