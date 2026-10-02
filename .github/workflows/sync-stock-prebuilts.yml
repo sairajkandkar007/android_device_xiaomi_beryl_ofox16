@@ -151,8 +151,21 @@ jobs:
 
       - name: Extract stock WLAN support
         run: |
+          set -euo pipefail
           rm -rf prebuilt/wlan
           mkdir -p prebuilt/wlan
+
+          # The WLAN payload is sourced from the exact stock vendor/vendor_dlkm
+          # images. Extract vendor here because the dedicated vendor extraction
+          # step runs later in this workflow.
+          if [ ! -d work/vendor/etc ]; then
+            rm -rf work/vendor
+            mkdir -p work/vendor
+            work/extract_erofs.sh work/vendor.img work/vendor
+          fi
+
+          test -d work/vendor
+          test -d work/vendor_dlkm
 
           # Exact Beryl WLAN firmware/config files observed in the device vendor tree.
           for rel in \
