@@ -227,6 +227,16 @@ jobs:
           test -s "$WORK/stock/vendor_ramdisk01"
           test -s "$WORK/stock/dtb"
           test -s "$WORK/stock/bootconfig"
+          if [ -f "$WORK/stock/kernel" ]; then test -s "$WORK/stock/kernel"; fi
+
+          # Do not assume fragment 01 is the recovery fragment: validate the
+          # exact stock v4 table before replacing anything.
+          python3 "$DEVICE_TREE/scripts/analyze_vendor_boot.py" \
+            "$DEVICE_TREE/prebuilt/vendor_boot.img" \
+            "$WORK/stock-analysis" \
+            "$WORK/stock-report"
+          grep -Eq "ramdisk_fragment\[1\]:.*type=2 name=recovery$" "$WORK/stock-report"
+
           cp -f "$WORK/built/ramdisk" "$WORK/stock/vendor_ramdisk01"
           python3 "$MKBOOTIMG/unpack_bootimg.py" --boot_img "$DEVICE_TREE/prebuilt/vendor_boot.img" --out "$WORK/stock" --format=mkbootimg -0 > "$WORK/mkbootimg_args"
           declare -a MKBOOTIMG_ARGS=()
@@ -244,7 +254,16 @@ jobs:
           test "$(cat "$WORK/verify/header_version")" = "4"
           cmp "$WORK/stock/vendor_ramdisk00" "$WORK/verify/vendor_ramdisk00"
           cmp "$WORK/stock/dtb" "$WORK/verify/dtb"
+          cmp "$WORK/stock/bootconfig" "$WORK/verify/bootconfig"
+          if [ -f "$WORK/stock/kernel" ]; then cmp "$WORK/stock/kernel" "$WORK/verify/kernel"; fi
           cmp "$WORK/built/ramdisk" "$WORK/verify/vendor_ramdisk01"
+
+          python3 "$DEVICE_TREE/scripts/analyze_vendor_boot.py" \
+            "$WORK/new/vendor_boot.img" \
+            "$WORK/final-analysis" \
+            "$WORK/final-report"
+          grep -Eq "ramdisk_fragment\[1\]:.*type=2 name=recovery$" "$WORK/final-report"
+
           cp -f "$WORK/new/vendor_boot.img" "$OUT/vendor_boot.img"
 
       - name: Show build outputs
