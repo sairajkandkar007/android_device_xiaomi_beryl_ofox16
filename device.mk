@@ -25,7 +25,9 @@ PRODUCT_PACKAGES += \
     vold_prepare_subdirs.recovery \
     wait_for_keymaster.recovery
 
-# Android security components needed by FBE/KeyMint recovery integration.
+# Android 16 security components used by recovery FBE/KeyMint integration.
+# The stock Beryl vendor_boot remains the authoritative source for the
+# device-specific KeyMint/Gatekeeper implementation.
 PRODUCT_PACKAGES += \
     android.hardware.security.keymint \
     android.hardware.security.secureclock \
