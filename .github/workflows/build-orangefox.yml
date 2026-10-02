@@ -106,6 +106,24 @@ jobs:
           cd "$RUNNER_TEMP/orangefox-sync"
           ./orangefox_sync.sh --branch "$FOX_BRANCH" --path "$FOX_ROOT" -- -j"$(nproc --all)" --no-tags --optimized-fetch --prune
 
+      - name: Update built-in Magisk installer
+        shell: bash
+        run: |
+          set -euxo pipefail
+          MAGISK_VERSION="30.7"
+          MAGISK_DIR="$FOX_ROOT/prebuilts/magisk"
+          MAGISK_APK="$MAGISK_DIR/Magisk-v${MAGISK_VERSION}.apk"
+          MAGISK_ZIP="$MAGISK_DIR/Magisk-v${MAGISK_VERSION}.zip"
+          mkdir -p "$MAGISK_DIR"
+          curl -fL --retry 5 --retry-delay 3 \
+            -o "$MAGISK_APK" \
+            "https://github.com/topjohnwu/Magisk/releases/download/v${MAGISK_VERSION}/Magisk-v${MAGISK_VERSION}.apk"
+          cp -f "$MAGISK_APK" "$MAGISK_ZIP"
+          test -s "$MAGISK_ZIP"
+          unzip -tq "$MAGISK_ZIP" >/dev/null
+          echo "FOX_USE_SPECIFIC_MAGISK_ZIP=$MAGISK_ZIP" >> "$GITHUB_ENV"
+          echo "Using official Magisk v${MAGISK_VERSION} installer: $MAGISK_ZIP"
+
       - name: Add device tree
         shell: bash
         run: |
@@ -138,6 +156,8 @@ jobs:
           export USE_CCACHE=1
           export CCACHE_EXEC="$(command -v ccache)"
           export CCACHE_DIR="${{ env.CCACHE_DIR }}"
+          export FOX_USE_SPECIFIC_MAGISK_ZIP="${{ env.FOX_USE_SPECIFIC_MAGISK_ZIP }}"
+          echo "FOX_USE_SPECIFIC_MAGISK_ZIP=$FOX_USE_SPECIFIC_MAGISK_ZIP"
           mka adbd recoveryimage -j"$(nproc --all)"
 
       - name: Merge OrangeFox recovery ramdisk into stock vendor_boot
