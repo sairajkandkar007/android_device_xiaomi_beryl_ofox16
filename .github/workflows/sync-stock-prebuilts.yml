@@ -62,8 +62,35 @@ jobs:
       - name: Install extraction tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y erofs-utils lz4 cpio python3
+          sudo apt-get install -y erofs-utils erofsfuse lz4 cpio python3
           git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg work/mkbootimg
+
+      - name: Configure EROFS extraction helper
+        run: |
+          cat > work/extract_erofs.sh <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          image="$1"
+          out="$2"
+          rm -rf "$out"
+          mkdir -p "$out"
+          mountpoint="$(mktemp -d)"
+          cleanup() {
+            fusermount -u "$mountpoint" >/dev/null 2>&1 || true
+            rm -rf "$mountpoint"
+          }
+          trap cleanup EXIT
+          erofsfuse "$image" "$mountpoint"
+          for _ in $(seq 1 20); do
+            if mountpoint -q "$mountpoint"; then
+              break
+            fi
+            sleep 1
+          done
+          mountpoint -q "$mountpoint"
+          cp -a "$mountpoint/." "$out/"
+          EOF
+          chmod +x work/extract_erofs.sh
 
       - name: Extract boot, DTB and stock vendor_boot
         run: |
@@ -91,8 +118,7 @@ jobs:
           rm -rf work/vendor_dlkm
           mkdir -p work/vendor_dlkm prebuilt/modules sepolicy bootctrl
 
-          test -x "$(command -v extract.erofs)"
-            extract.erofs work/vendor_dlkm.img work/vendor_dlkm
+          work/extract_erofs.sh work/vendor_dlkm.img work/vendor_dlkm
 
           while IFS= read -r module; do
             case "$module" in
@@ -122,8 +148,7 @@ jobs:
 
           # System-side vold/keystore2/fscrypt/FBE userspace components.
           if [ -f work/system.img ]; then
-            test -x "$(command -v extract.erofs)"
-            extract.erofs work/system.img work/system
+            work/extract_erofs.sh work/system.img work/system
           fi
 
           if [ -d work/system ]; then
@@ -181,8 +206,7 @@ jobs:
           rm -rf work/vendor
           mkdir -p work/vendor
 
-          test -x "$(command -v extract.erofs)"
-            extract.erofs work/vendor.img work/vendor
+          work/extract_erofs.sh work/vendor.img work/vendor
 
           test -s work/vendor/etc/selinux/vendor_sepolicy.cil
           cp work/vendor/etc/selinux/vendor_sepolicy.cil             sepolicy/vendor_sepolicy.cil
