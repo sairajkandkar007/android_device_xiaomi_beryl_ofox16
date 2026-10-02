@@ -29,14 +29,17 @@ jobs:
           lfs: true
           fetch-depth: 1
 
-      - name: Maximize build space
+      - name: Clean runner before build
         shell: bash
         run: |
           set -euxo pipefail
-          df -h
+          echo "Cleaning runner before OrangeFox sync..."
+          rm -rf "$FOX_ROOT" "$RUNNER_TEMP/orangefox-sync" "$RUNNER_TEMP/vendorboot-merge" "$RUNNER_TEMP/mkbootimg"
+          rm -rf "$CCACHE_DIR/tmp"
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/powershell /usr/local/lib/node_modules
           sudo apt-get clean
           if command -v docker >/dev/null 2>&1; then sudo docker system prune -af || true; fi
+          sync
           df -h
 
       - name: Configure swap and zram
@@ -105,9 +108,8 @@ jobs:
           git clone --depth=1 --filter=blob:none --single-branch --branch master \
             https://gitlab.com/OrangeFox/sync.git "$RUNNER_TEMP/orangefox-sync"
           cd "$RUNNER_TEMP/orangefox-sync"
-          # Official OrangeFox syntax: branch + absolute path.
-          # The helper performs the repo initialization/sync itself.
           ./orangefox_sync.sh --branch "$FOX_BRANCH" --path "$FOX_ROOT"
+
       - name: Update built-in Magisk installer
         shell: bash
         run: |
@@ -117,14 +119,11 @@ jobs:
           MAGISK_APK="$MAGISK_DIR/Magisk-v${MAGISK_VERSION}.apk"
           MAGISK_ZIP="$MAGISK_DIR/Magisk-v${MAGISK_VERSION}.zip"
           mkdir -p "$MAGISK_DIR"
-          curl -fL --retry 5 --retry-delay 3 \
-            -o "$MAGISK_APK" \
-            "https://github.com/topjohnwu/Magisk/releases/download/v${MAGISK_VERSION}/Magisk-v${MAGISK_VERSION}.apk"
+          curl -fL --retry 5 --retry-delay 3 -o "$MAGISK_APK" "https://github.com/topjohnwu/Magisk/releases/download/v${MAGISK_VERSION}/Magisk-v${MAGISK_VERSION}.apk"
           cp -f "$MAGISK_APK" "$MAGISK_ZIP"
           test -s "$MAGISK_ZIP"
           unzip -tq "$MAGISK_ZIP" >/dev/null
           echo "FOX_USE_SPECIFIC_MAGISK_ZIP=$MAGISK_ZIP" >> "$GITHUB_ENV"
-          echo "Using official Magisk v${MAGISK_VERSION} installer: $MAGISK_ZIP"
 
       - name: Add device tree
         shell: bash
@@ -143,8 +142,6 @@ jobs:
           set -euxo pipefail
           source build/envsetup.sh
           lunch "$LUNCH_TARGET"
-          echo "TARGET_PRODUCT=$TARGET_PRODUCT"
-          echo "TARGET_BUILD_VARIANT=$TARGET_BUILD_VARIANT"
           test "$TARGET_PRODUCT" = "fox_beryl"
           test "$TARGET_BUILD_VARIANT" = "eng"
 
@@ -159,7 +156,6 @@ jobs:
           export CCACHE_EXEC="$(command -v ccache)"
           export CCACHE_DIR="${{ env.CCACHE_DIR }}"
           export FOX_USE_SPECIFIC_MAGISK_ZIP="${{ env.FOX_USE_SPECIFIC_MAGISK_ZIP }}"
-          echo "FOX_USE_SPECIFIC_MAGISK_ZIP=$FOX_USE_SPECIFIC_MAGISK_ZIP"
           mka adbd recoveryimage -j"$(nproc --all)"
 
       - name: Merge OrangeFox recovery ramdisk into stock vendor_boot
@@ -171,12 +167,10 @@ jobs:
           OUT="out/target/product/beryl"
           WORK="$RUNNER_TEMP/vendorboot-merge"
           MKBOOTIMG="$RUNNER_TEMP/mkbootimg"
-
           test -s "$OUT/recovery.img"
           test -s "$DEVICE_TREE/prebuilt/vendor_boot.img"
           rm -rf "$WORK" "$MKBOOTIMG"
           mkdir -p "$WORK/built" "$WORK/stock" "$WORK/new"
-
           for attempt in 1 2 3 4 5; do
             if git -c http.version=HTTP/1.1 clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg "$MKBOOTIMG"; then break; fi
             rm -rf "$MKBOOTIMG"
@@ -184,63 +178,33 @@ jobs:
           done
           test -f "$MKBOOTIMG/unpack_bootimg.py"
           test -f "$MKBOOTIMG/mkbootimg.py"
-
-          # Extract the ramdisk produced by OrangeFox.
           python3 "$MKBOOTIMG/unpack_bootimg.py" --boot_img "$OUT/recovery.img" --out "$WORK/built"
           test -s "$WORK/built/ramdisk"
-
-          # Extract every stock vendor_boot v4 fragment and metadata.
           python3 "$MKBOOTIMG/unpack_bootimg.py" --boot_img "$DEVICE_TREE/prebuilt/vendor_boot.img" --out "$WORK/stock"
           test -s "$WORK/stock/vendor_ramdisk00"
           test -s "$WORK/stock/vendor_ramdisk01"
           test -s "$WORK/stock/dtb"
           test -s "$WORK/stock/bootconfig"
-
-          # Replace ONLY the dedicated recovery fragment.
           cp -f "$WORK/built/ramdisk" "$WORK/stock/vendor_ramdisk01"
-
-          # Generate the exact AOSP mkbootimg argument list from stock.
-          # This preserves v4 fragment types/names, board IDs, addresses,
-          # ordering, page size, DTB and vendor_bootconfig.
           python3 "$MKBOOTIMG/unpack_bootimg.py" --boot_img "$DEVICE_TREE/prebuilt/vendor_boot.img" --out "$WORK/stock" --format=mkbootimg -0 > "$WORK/mkbootimg_args"
-
           declare -a MKBOOTIMG_ARGS=()
-          while IFS= read -r -d "" ARG; do
-            MKBOOTIMG_ARGS+=("$ARG")
-          done < "$WORK/mkbootimg_args"
-
-          # The stock argument list points vendor_ramdisk01 to the extracted
-          # stock recovery file. That path now contains the OrangeFox ramdisk.
+          while IFS= read -r -d "" ARG; do MKBOOTIMG_ARGS+=("$ARG"); done < "$WORK/mkbootimg_args"
           found_recovery=0
           for i in "${!MKBOOTIMG_ARGS[@]}"; do
-            if [ "${MKBOOTIMG_ARGS[$i]}" = "$WORK/stock/vendor_ramdisk01" ]; then
-              found_recovery=1
-              break
-            fi
+            if [ "${MKBOOTIMG_ARGS[$i]}" = "$WORK/stock/vendor_ramdisk01" ]; then found_recovery=1; break; fi
           done
           test "$found_recovery" = 1
-
           python3 "$MKBOOTIMG/mkbootimg.py" "${MKBOOTIMG_ARGS[@]}" --vendor_boot "$WORK/new/vendor_boot.img"
           test -s "$WORK/new/vendor_boot.img"
-
           SIZE=$(stat -c "%s" "$WORK/new/vendor_boot.img")
-          MAX=$((64 * 1024 * 1024))
-          echo "Merged vendor_boot size: $SIZE bytes"
-          test "$SIZE" -le "$MAX"
-
-          # Validate the resulting vendor_boot v4 and byte-level preservation.
+          test "$SIZE" -le $((64 * 1024 * 1024))
           python3 "$MKBOOTIMG/unpack_bootimg.py" --boot_img "$WORK/new/vendor_boot.img" --out "$WORK/verify"
           test "$(cat "$WORK/verify/header_version")" = "4"
-          test -s "$WORK/verify/vendor_ramdisk00"
-          test -s "$WORK/verify/vendor_ramdisk01"
-          test -s "$WORK/verify/dtb"
           cmp "$WORK/stock/vendor_ramdisk00" "$WORK/verify/vendor_ramdisk00"
           cmp "$WORK/stock/dtb" "$WORK/verify/dtb"
           cmp "$WORK/built/ramdisk" "$WORK/verify/vendor_ramdisk01"
-
           cp -f "$WORK/new/vendor_boot.img" "$OUT/vendor_boot.img"
-          ls -lh "$OUT/vendor_boot.img"
-          sha256sum "$OUT/vendor_boot.img"
+
       - name: Show build outputs
         if: always()
         working-directory: ${{ env.FOX_ROOT }}
@@ -253,22 +217,6 @@ jobs:
           ccache -s || true
           df -h
           free -h
-
-      - name: Cleanup workspace
-        if: always()
-        shell: bash
-        run: |
-          set +e
-          echo "Cleaning temporary sync/build state..."
-          rm -rf "$RUNNER_TEMP/orangefox-sync"
-          rm -rf "$RUNNER_TEMP/vendorboot-merge"
-          rm -rf "$RUNNER_TEMP/mkbootimg"
-          rm -rf "$FOX_ROOT/.repo"
-          rm -rf "$FOX_ROOT/.git"
-          rm -rf "$CCACHE_DIR/tmp"
-          sync
-          df -h
-          du -sh "$FOX_ROOT" 2>/dev/null || true
 
       - name: Upload recovery image
         if: success()
