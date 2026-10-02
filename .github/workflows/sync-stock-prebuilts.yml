@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   sync:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
 
     steps:
@@ -91,11 +91,8 @@ jobs:
           rm -rf work/vendor_dlkm
           mkdir -p work/vendor_dlkm prebuilt/modules sepolicy bootctrl
 
-          if command -v extract.erofs >/dev/null 2>&1; then
+          test -x "$(command -v extract.erofs)"
             extract.erofs work/vendor_dlkm.img work/vendor_dlkm
-          else
-            fsck.erofs --extract=work/vendor_dlkm work/vendor_dlkm.img
-          fi
 
           while IFS= read -r module; do
             case "$module" in
@@ -125,11 +122,8 @@ jobs:
 
           # System-side vold/keystore2/fscrypt/FBE userspace components.
           if [ -f work/system.img ]; then
-            if command -v extract.erofs >/dev/null 2>&1; then
-              extract.erofs work/system.img work/system
-            else
-              fsck.erofs --extract=work/system work/system.img
-            fi
+            test -x "$(command -v extract.erofs)"
+            extract.erofs work/system.img work/system
           fi
 
           if [ -d work/system ]; then
@@ -187,11 +181,8 @@ jobs:
           rm -rf work/vendor
           mkdir -p work/vendor
 
-          if command -v extract.erofs >/dev/null 2>&1; then
+          test -x "$(command -v extract.erofs)"
             extract.erofs work/vendor.img work/vendor
-          else
-            fsck.erofs --extract=work/vendor work/vendor.img
-          fi
 
           test -s work/vendor/etc/selinux/vendor_sepolicy.cil
           cp work/vendor/etc/selinux/vendor_sepolicy.cil             sepolicy/vendor_sepolicy.cil
