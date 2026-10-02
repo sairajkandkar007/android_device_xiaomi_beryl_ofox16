@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  FOX_BRANCH: 16.0
+  FOX_BRANCH: "16.0"
   FOX_ROOT: ${{ github.workspace }}/fox_16.0
   DEVICE_PATH: device/xiaomi/beryl
   LUNCH_TARGET: fox_beryl-ap2a-eng
@@ -110,10 +110,18 @@ jobs:
           from pathlib import Path
           p = Path("orangefox_sync.sh")
           s = p.read_text()
-          s = s.replace("repo sync;", 'repo sync -j"$(nproc --all)" --no-tags --optimized-fetch --prune --current-branch;')
-          s = s.replace("git clone $URL -b $BRANCH recovery;", 'git clone --depth=1 --single-branch --no-tags $URL -b $BRANCH recovery;')
-          s = s.replace("git clone $URL -b "$BRANCH" recovery;", 'git clone --depth=1 --single-branch --no-tags $URL -b "$BRANCH" recovery;')
-          s = s.replace("git clone $URL -b "$BRANCH" recovery;", 'git clone --depth=1 --single-branch --no-tags $URL -b "$BRANCH" recovery;')
+          s = s.replace(
+              "repo sync;",
+              'repo sync -j"$(nproc --all)" --no-tags --optimized-fetch --prune --current-branch;'
+          )
+          s = s.replace(
+              'git clone $URL -b $BRANCH recovery;',
+              'git clone --depth=1 --single-branch --no-tags $URL -b $BRANCH recovery;'
+          )
+          s = s.replace(
+              'git clone $URL -b "$BRANCH" "$test_build_device";',
+              'git clone --depth=1 --single-branch --no-tags $URL -b "$FOX_DEF_BRANCH" "$test_build_device";'
+          )
           p.write_text(s)
           PY
           ./orangefox_sync.sh --branch "$FOX_BRANCH" --path "$FOX_ROOT"
