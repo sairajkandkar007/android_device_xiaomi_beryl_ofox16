@@ -45,7 +45,7 @@ jobs:
           TAG: ${{ inputs.release_tag }}
         run: |
           mkdir -p work
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY"             --pattern 'boot.img'             --pattern 'vendor_boot.img'             --pattern 'dtbo.img'             --pattern 'vendor_dlkm.img'             --pattern 'system.img'             --dir work
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY"             --pattern 'boot.img'             --pattern 'vendor_boot.img'             --pattern 'dtbo.img'             --pattern 'vendor_dlkm.img'             --pattern 'system.img'             --pattern 'system_ext.img'             --pattern 'product.img'             --dir work
 
       - name: Download split stock vendor image
         env:
@@ -63,7 +63,7 @@ jobs:
       - name: Install extraction tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y erofs-utils erofsfuse lz4 cpio python3
+          sudo apt-get install -y binutils erofs-utils erofsfuse lz4 cpio python3
           for attempt in 1 2 3 4 5; do
             rm -rf work/mkbootimg
             if git -c http.version=HTTP/1.1 clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg work/mkbootimg; then
@@ -220,7 +220,7 @@ jobs:
 
       - name: Search and copy stock decryption support
         run: |
-          rm -rf prebuilt/decryption work/system work/key_service_scan.txt work/key_service_deps.txt
+          rm -rf prebuilt/decryption work/system work/system_ext work/product work/key_service_scan.txt work/key_service_deps.txt
           mkdir -p prebuilt/decryption/vendor prebuilt/decryption/system prebuilt/decryption/config prebuilt/decryption/evidence
 
           # Extract vendor here as well because this step runs before the
@@ -244,6 +244,12 @@ jobs:
           if [ -f work/system.img ]; then
             work/extract_erofs.sh work/system.img work/system
           fi
+          if [ -f work/system_ext.img ]; then
+            work/extract_erofs.sh work/system_ext.img work/system_ext
+          fi
+          if [ -f work/product.img ]; then
+            work/extract_erofs.sh work/product.img work/product
+          fi
 
           if [ -d work/system ]; then
             find work/system -type f -regextype posix-extended \
@@ -260,6 +266,16 @@ jobs:
             rel=${src#work/vendor/etc/}
             mkdir -p "prebuilt/decryption/config/fstab/$(dirname "$rel")"
             cp -a "$src" "prebuilt/decryption/config/fstab/$rel"
+          done
+
+          for tree in system system_ext product; do
+            if [ -d "work/$tree/etc" ]; then
+              find "work/$tree/etc" -type f \(                 -name 'fstab*' -o -name 'vold*.rc' -o -name '*fscrypt*' -o                 -name '*keymint*.xml' -o -name '*keymaster*.xml' -o                 -name '*gatekeeper*.xml' -o -name '*keystore*.xml'               \) -print0 2>/dev/null | while IFS= read -r -d '' src; do
+                rel=${src#work/$tree/etc/}
+                mkdir -p "prebuilt/decryption/config/$tree/$(dirname "$rel")"
+                cp -a "$src" "prebuilt/decryption/config/$tree/$rel"
+              done
+            fi
           done
 
           if [ -d work/system/etc ]; then
