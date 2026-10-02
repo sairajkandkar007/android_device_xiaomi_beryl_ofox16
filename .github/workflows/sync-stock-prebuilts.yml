@@ -140,6 +140,62 @@ jobs:
             cp "$src" "prebuilt/modules/$module"
           done < prebuilt/recovery-modules.list
 
+      - name: Extract stock WLAN support
+        run: |
+          rm -rf prebuilt/wlan
+          mkdir -p prebuilt/wlan
+
+          # Exact Beryl WLAN firmware/config files observed in the device vendor tree.
+          for rel in \
+            vendor/firmware/WIFI_RAM_CODE_soc2_2_1b_1.bin \
+            vendor/firmware/WIFI_RAM_CODE_soc2_2_1c_1.bin \
+            vendor/firmware/soc2_2_ram_wifi_1b_1_hdr.bin \
+            vendor/firmware/soc2_2_ram_wifi_1c_1_hdr.bin \
+            vendor/firmware/WMT_SOC.cfg \
+            vendor/firmware/wifi.cfg; do
+            if [ -f "work/vendor/$rel" ]; then
+              mkdir -p "prebuilt/wlan/$(dirname "$rel")"
+              cp -a "work/vendor/$rel" "prebuilt/wlan/$rel"
+            fi
+          done
+
+          # WLAN-related init/userspace components are copied only when present
+          # in the exact Android 16 stock vendor image.
+          while IFS= read -r src; do
+            [ -n "$src" ] || continue
+            rel=${src#work/vendor/}
+            mkdir -p "prebuilt/wlan/$(dirname "$rel")"
+            cp -a "$src" "prebuilt/wlan/$rel"
+          done < <(find work/vendor -type f \
+            \( -path '*/etc/init/*wlan*.rc' -o \
+               -path '*/etc/init/*wmt*.rc' -o \
+               -path '*/etc/init/*conninfra*.rc' -o \
+               -path '*/bin/*wlan*' -o \
+               -path '*/bin/*wmt*' -o \
+               -path '*/bin/*conninfra*' -o \
+               -path '*/bin/hw/*wifi*' -o \
+               -path '*/bin/hw/*wlan*' -o \
+               -path '*/lib*/*libwifi*' -o \
+               -path '*/lib*/*libwlan*' -o \
+               -path '*/lib*/*wifi*.so' \) -print 2>/dev/null)
+
+          # Preserve the exact stock WLAN module inventory. Do not guess module
+          # names; recovery-modules.list remains the authoritative selected list.
+          find work/vendor_dlkm -type f -name '*.ko' \
+            \( -iname '*wlan*' -o -iname '*wifi*' -o -iname '*conninfra*' -o -iname '*wmt*' \) \
+            -print 2>/dev/null | while IFS= read -r src; do
+              cp -a "$src" prebuilt/wlan/$(basename "$src")
+          done
+
+          find prebuilt/wlan -type f -printf '%P\n' | sort > prebuilt/wlan/manifest.txt
+          echo "Stock WLAN payload:"
+          cat prebuilt/wlan/manifest.txt
+          if [ -s prebuilt/wlan/manifest.txt ]; then
+            echo "Stock WLAN payload extracted."
+          else
+            echo "No WLAN payload found in the stock images; continuing without WLAN support."
+          fi
+
       - name: Search and copy stock decryption support
         run: |
           rm -rf prebuilt/decryption work/system
