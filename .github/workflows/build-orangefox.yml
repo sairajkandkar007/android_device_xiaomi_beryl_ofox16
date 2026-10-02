@@ -1,0 +1,165 @@
+name: Build OrangeFox Recovery
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orangefox-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FOX_BRANCH: 16.0
+  FOX_ROOT: ${{ github.workspace }}/fox_16.0
+  DEVICE_PATH: device/xiaomi/beryl
+  LUNCH_TARGET: fox_beryl-ap2a-eng
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout device tree
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+          fetch-depth: 1
+
+      - name: Maximize build space
+        shell: bash
+        run: |
+          set -euxo pipefail
+          df -h
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/powershell /usr/local/lib/node_modules
+          sudo apt-get clean
+          if command -v docker >/dev/null 2>&1; then sudo docker system prune -af || true; fi
+          df -h
+
+      - name: Configure swap and zram
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y zram-tools util-linux
+          if ! sudo swapon --show --noheadings | grep -q .; then
+            sudo fallocate -l 12G /swapfile
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile
+            sudo swapon -p 10 /swapfile
+          fi
+          if command -v zramctl >/dev/null 2>&1 && sudo modprobe zram num_devices=1 2>/dev/null; then
+            ZRAM_DEV="$(sudo zramctl --find --size 8G --algorithm lz4 2>/dev/null || true)"
+            if [ -n "$ZRAM_DEV" ]; then
+              sudo mkswap "$ZRAM_DEV"
+              sudo swapon -p 100 "$ZRAM_DEV"
+            fi
+          fi
+          free -h
+          sudo swapon --show
+          sudo zramctl || true
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y aria2 bc bison build-essential ccache flex gperf lib32ncurses-dev lib32readline-dev lib32z1-dev lz4 libncurses-dev libssl-dev libxml2-utils rsync schedtool unzip zip zlib1g-dev
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-ofox16-${{ runner.os }}-${{ hashFiles('BoardConfig.mk', 'device.mk', 'fox_beryl.mk', 'AndroidProducts.mk') }}
+          restore-keys: |
+            ccache-ofox16-${{ runner.os }}-
+
+      - name: Configure ccache
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p "$CCACHE_DIR"
+          export USE_CCACHE=1
+          export CCACHE_EXEC="$(command -v ccache)"
+          export CCACHE_DIR="$CCACHE_DIR"
+          ccache --set-config=cache_dir="$CCACHE_DIR"
+          ccache --set-config=compression=true
+          ccache -M 20G
+          ccache -z
+          {
+            echo "USE_CCACHE=1"
+            echo "CCACHE_EXEC=$CCACHE_EXEC"
+            echo "CCACHE_DIR=$CCACHE_DIR"
+          } >> "$GITHUB_ENV"
+          ccache -s
+
+      - name: Sync OrangeFox 16.0
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf "$FOX_ROOT"
+          mkdir -p "$FOX_ROOT"
+          git clone --depth=1 https://github.com/OrangeFox16/sync.git "$RUNNER_TEMP/orangefox-sync"
+          cd "$RUNNER_TEMP/orangefox-sync"
+          ./orangefox_sync.sh --branch "$FOX_BRANCH" --path "$FOX_ROOT" -- -j"$(nproc --all)" --no-tags --optimized-fetch --prune
+
+      - name: Add device tree
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p "$FOX_ROOT/$DEVICE_PATH"
+          rsync -a --exclude='.git/' --exclude='.github/' "$GITHUB_WORKSPACE/" "$FOX_ROOT/$DEVICE_PATH/"
+          test -f "$FOX_ROOT/$DEVICE_PATH/AndroidProducts.mk"
+          test -f "$FOX_ROOT/$DEVICE_PATH/fox_beryl.mk"
+          test -f "$FOX_ROOT/$DEVICE_PATH/BoardConfig.mk"
+
+      - name: Verify lunch target
+        working-directory: ${{ env.FOX_ROOT }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          source build/envsetup.sh
+          lunch "$LUNCH_TARGET"
+          echo "TARGET_PRODUCT=$TARGET_PRODUCT"
+          echo "TARGET_BUILD_VARIANT=$TARGET_BUILD_VARIANT"
+          test "$TARGET_PRODUCT" = "fox_beryl"
+          test "$TARGET_BUILD_VARIANT" = "eng"
+
+      - name: Build recovery
+        working-directory: ${{ env.FOX_ROOT }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          source build/envsetup.sh
+          lunch "$LUNCH_TARGET"
+          export USE_CCACHE=1
+          export CCACHE_EXEC="$(command -v ccache)"
+          export CCACHE_DIR="${{ env.CCACHE_DIR }}"
+          mka adbd recoveryimage -j"$(nproc --all)"
+
+      - name: Show build outputs
+        if: always()
+        working-directory: ${{ env.FOX_ROOT }}
+        shell: bash
+        run: |
+          set +e
+          OUT="out/target/product/beryl"
+          ls -lah "$OUT" 2>/dev/null || true
+          find "$OUT" -maxdepth 1 -type f \( -name '*recovery*.img' -o -name 'vendor_boot*.img' \) -printf '%p %s bytes\\n' 2>/dev/null || true
+          ccache -s || true
+          df -h
+          free -h
+
+      - name: Upload recovery image
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orangefox-beryl-recovery
+          path: |
+            ${{ env.FOX_ROOT }}/out/target/product/beryl/recovery.img
+            ${{ env.FOX_ROOT }}/out/target/product/beryl/vendor_boot.img
+          if-no-files-found: warn
+          retention-days: 7
