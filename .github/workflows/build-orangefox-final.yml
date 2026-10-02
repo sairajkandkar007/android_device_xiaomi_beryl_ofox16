@@ -159,15 +159,6 @@ jobs:
           source build/envsetup.sh
           lunch "$LUNCH_TARGET"
 
-          echo "=== PLATFORM VERSION AUDIT ==="
-          get_build_var PLATFORM_VERSION
-          get_build_var PLATFORM_SDK_VERSION
-          get_build_var PLATFORM_VERSION_CODENAME
-          get_build_var BUILD_ID
-          get_build_var TARGET_PLATFORM_VERSION
-
-           echo "=== PLATFORM VERSION DEFINITIONS ==="
-           grep -RInE '(^|[[:space:]])(PLATFORM_VERSION|TARGET_PLATFORM_VERSION|PLATFORM_SDK_VERSION|BUILD_ID)[[:space:]]*[:?+]?=' "$FOX_ROOT/build" "$FOX_ROOT/vendor/orangefox" "$FOX_ROOT/vendor/recovery" "$FOX_ROOT/device/xiaomi/beryl" 2>/dev/null | head -200 || true
           test "$TARGET_PRODUCT" = "fox_beryl"
           test "$TARGET_BUILD_VARIANT" = "eng"
           
