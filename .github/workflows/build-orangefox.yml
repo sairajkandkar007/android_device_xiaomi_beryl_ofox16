@@ -145,6 +145,7 @@ jobs:
         run: |
           set -eo pipefail
           set +u
+          export FOX_BUILD_DEVICE=beryl
           source build/envsetup.sh
           lunch "$LUNCH_TARGET"
           test "$TARGET_PRODUCT" = "fox_beryl"
@@ -156,13 +157,14 @@ jobs:
         run: |
           set -eo pipefail
           set +u
+          export FOX_BUILD_DEVICE=beryl
           source build/envsetup.sh
           lunch "$LUNCH_TARGET"
           export USE_CCACHE=1
           export CCACHE_EXEC="$(command -v ccache)"
           export CCACHE_DIR="${{ env.CCACHE_DIR }}"
           export FOX_USE_SPECIFIC_MAGISK_ZIP="${{ env.FOX_USE_SPECIFIC_MAGISK_ZIP }}"
-          mka adbd recoveryimage -j"$(nproc --all)"
+          mka adbd recoveryimage -j"$(nproc --all)" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
       - name: Merge OrangeFox recovery ramdisk into stock vendor_boot
         working-directory: ${{ env.FOX_ROOT }}
