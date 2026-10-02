@@ -44,7 +44,7 @@ jobs:
           TAG: ${{ inputs.release_tag }}
         run: |
           mkdir -p work
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY"             --pattern 'boot.img'             --pattern 'vendor_boot.img'             --pattern 'dtbo.img'             --pattern 'vendor_dlkm.img'             --dir work
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY"             --pattern 'boot.img'             --pattern 'vendor_boot.img'             --pattern 'dtbo.img'             --pattern 'vendor_dlkm.img'             --pattern 'system.img'             --dir work
 
       - name: Download split stock vendor image
         env:
@@ -108,6 +108,79 @@ jobs:
             fi
             cp "$src" "prebuilt/modules/$module"
           done < prebuilt/recovery-modules.list
+
+      - name: Search and copy stock decryption support
+        run: |
+          rm -rf prebuilt/decryption work/system
+          mkdir -p prebuilt/decryption/vendor prebuilt/decryption/system prebuilt/decryption/config
+
+          # Vendor-side Android FBE/KeyMint/Gatekeeper components.
+          find work/vendor -type f -regextype posix-extended \
+            -iregex '.*(keymint|keymaster|gatekeeper|keystore2|vold|fscrypt|fbe|metadata.*encrypt|cryptfs|wrappedkey|secureclock|sharedsecret).*' \
+            -print0 2>/dev/null | while IFS= read -r -d '' src; do
+              rel=${src#work/vendor/}
+              mkdir -p "prebuilt/decryption/vendor/$(dirname "$rel")"
+              cp -a "$src" "prebuilt/decryption/vendor/$rel"
+            done
+
+          # System-side vold/keystore2/fscrypt/FBE userspace components.
+          if [ -f work/system.img ]; then
+            if command -v extract.erofs >/dev/null 2>&1; then
+              extract.erofs work/system.img work/system
+            else
+              fsck.erofs --extract=work/system work/system.img
+            fi
+          fi
+
+          if [ -d work/system ]; then
+            find work/system -type f -regextype posix-extended \
+              -iregex '.*(keymint|keymaster|gatekeeper|keystore2|vold|fscrypt|fbe|metadata.*encrypt|cryptfs|wrappedkey|secureclock|sharedsecret).*' \
+              -print0 2>/dev/null | while IFS= read -r -d '' src; do
+                rel=${src#work/system/}
+                mkdir -p "prebuilt/decryption/system/$(dirname "$rel")"
+                cp -a "$src" "prebuilt/decryption/system/$rel"
+              done
+          fi
+
+          # Recovery-relevant fstab/configuration entries containing encryption,
+          # metadata, key-directory, fscrypt or KeyMint settings.
+          find work/vendor/etc -type f \
+            -regextype posix-extended \
+            -iregex '.*(fstab|vold|crypt|fscrypt|keymint|keymaster|gatekeeper|keystore|metadata).*' \
+            -print0 2>/dev/null | while IFS= read -r -d '' src; do
+              rel=${src#work/vendor/etc/}
+              mkdir -p "prebuilt/decryption/config/$(dirname "$rel")"
+              cp -a "$src" "prebuilt/decryption/config/$rel"
+            done
+
+          # Copy matching system configuration as well.
+          if [ -d work/system/etc ]; then
+            find work/system/etc -type f \
+              -regextype posix-extended \
+              -iregex '.*(fstab|vold|crypt|fscrypt|keymint|keymaster|gatekeeper|keystore|metadata).*' \
+              -print0 2>/dev/null | while IFS= read -r -d '' src; do
+                rel=${src#work/system/etc/}
+                mkdir -p "prebuilt/decryption/config/system/$(dirname "$rel")"
+                cp -a "$src" "prebuilt/decryption/config/system/$rel"
+              done
+          fi
+
+          # Search policy for decryption-related domains/rules; retain the stock
+          # policy files as evidence rather than modifying policy automatically.
+          find work/vendor/etc/selinux -type f \
+            -regextype posix-extended \
+            -iregex '.*(keystore|keymint|gatekeeper|vold|fscrypt|crypt|metadata).*' \
+            -print0 2>/dev/null | while IFS= read -r -d '' src; do
+              rel=${src#work/vendor/etc/selinux/}
+              mkdir -p "prebuilt/decryption/config/selinux/$(dirname "$rel")"
+              cp -a "$src" "prebuilt/decryption/config/selinux/$rel"
+            done
+
+          find prebuilt/decryption -type f -printf '%P\n' | sort > prebuilt/decryption/manifest.txt
+
+          echo "Decryption-related stock payload:"
+          cat prebuilt/decryption/manifest.txt
+          test -s prebuilt/decryption/manifest.txt
 
       - name: Extract stock SELinux policy and boot-control HAL
         run: |
