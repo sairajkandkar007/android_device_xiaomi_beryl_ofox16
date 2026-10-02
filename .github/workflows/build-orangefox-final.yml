@@ -297,7 +297,7 @@ jobs:
           
           python3 "$DEVICE_TREE/scripts/analyze_vendor_boot.py" \
             "$WORK/new/vendor_boot.img" "$WORK/final-analysis" "$WORK/final-report"
-          grep -Eq 'ramdisk_fragment\[1\]:.*type=2 name=recovery
+          grep -Eq 'ramdisk_fragment\[1\]:.*type=2 name=recovery$' "$WORK/final-report"
           
           cp -f "$WORK/new/vendor_boot.img" "$OUT/vendor_boot.img"
           echo "✓ Merge complete"
