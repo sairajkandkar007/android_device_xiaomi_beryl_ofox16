@@ -63,7 +63,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y erofs-utils erofsfuse lz4 cpio python3
-          git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg work/mkbootimg
+          for attempt in 1 2 3 4 5; do
+            rm -rf work/mkbootimg
+            if git -c http.version=HTTP/1.1 clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg work/mkbootimg; then
+              break
+            fi
+            echo "mkbootimg clone attempt $attempt failed; retrying..."
+            sleep $((attempt * 5))
+          done
+          test -f work/mkbootimg/unpack_bootimg.py
 
       - name: Configure EROFS extraction helper
         run: |
