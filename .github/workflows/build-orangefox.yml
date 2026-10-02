@@ -149,10 +149,12 @@ jobs:
           OUT="out/target/product/beryl"
           WORK="$RUNNER_TEMP/vendorboot-merge"
           MKBOOTIMG="$RUNNER_TEMP/mkbootimg"
+
           test -s "$OUT/recovery.img"
           test -s "$DEVICE_TREE/prebuilt/vendor_boot.img"
           rm -rf "$WORK" "$MKBOOTIMG"
           mkdir -p "$WORK/built" "$WORK/stock" "$WORK/new"
+
           for attempt in 1 2 3 4 5; do
             if git -c http.version=HTTP/1.1 clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg "$MKBOOTIMG"; then break; fi
             rm -rf "$MKBOOTIMG"
@@ -161,49 +163,62 @@ jobs:
           test -f "$MKBOOTIMG/unpack_bootimg.py"
           test -f "$MKBOOTIMG/mkbootimg.py"
 
-          # Extract the ramdisk from the built recovery image.
+          # Extract the ramdisk produced by OrangeFox.
           python3 "$MKBOOTIMG/unpack_bootimg.py" --boot_img "$OUT/recovery.img" --out "$WORK/built"
           test -s "$WORK/built/ramdisk"
 
-          # Extract the stock vendor_boot from the device tree.
+          # Extract every stock vendor_boot v4 fragment and metadata.
           python3 "$MKBOOTIMG/unpack_bootimg.py" --boot_img "$DEVICE_TREE/prebuilt/vendor_boot.img" --out "$WORK/stock"
           test -s "$WORK/stock/vendor_ramdisk00"
           test -s "$WORK/stock/vendor_ramdisk01"
           test -s "$WORK/stock/dtb"
+          test -s "$WORK/stock/bootconfig"
 
           # Replace ONLY the dedicated recovery fragment.
-          cp -f "$WORK/built/ramdisk" "$WORK/new/vendor_ramdisk01"
+          cp -f "$WORK/built/ramdisk" "$WORK/stock/vendor_ramdisk01"
 
-          # Repack vendor_boot v4 while preserving the stock main vendor ramdisk and DTB.
-          python3 "$MKBOOTIMG/mkbootimg.py" \
-            --header_version 4 \
-            --pagesize 4096 \
-            --vendor_boot \
-            --vendor_ramdisk "$WORK/stock/vendor_ramdisk00" \
-            --vendor_ramdisk "$WORK/new/vendor_ramdisk01" \
-            --dtb "$WORK/stock/dtb" \
-            --vendor_bootconfig "$WORK/stock/vendor_bootconfig" \
-            -o "$WORK/new/vendor_boot.img"
+          # Generate the exact AOSP mkbootimg argument list from stock.
+          # This preserves v4 fragment types/names, board IDs, addresses,
+          # ordering, page size, DTB and vendor_bootconfig.
+          python3 "$MKBOOTIMG/unpack_bootimg.py" --boot_img "$DEVICE_TREE/prebuilt/vendor_boot.img" --out "$WORK/stock" --format=mkbootimg -0 > "$WORK/mkbootimg_args"
 
+          declare -a MKBOOTIMG_ARGS=()
+          while IFS= read -r -d "" ARG; do
+            MKBOOTIMG_ARGS+=("$ARG")
+          done < "$WORK/mkbootimg_args"
+
+          # The stock argument list points vendor_ramdisk01 to the extracted
+          # stock recovery file. That path now contains the OrangeFox ramdisk.
+          found_recovery=0
+          for i in "${!MKBOOTIMG_ARGS[@]}"; do
+            if [ "${MKBOOTIMG_ARGS[$i]}" = "$WORK/stock/vendor_ramdisk01" ]; then
+              found_recovery=1
+              break
+            fi
+          done
+          test "$found_recovery" = 1
+
+          python3 "$MKBOOTIMG/mkbootimg.py" "${MKBOOTIMG_ARGS[@]}" --vendor_boot "$WORK/new/vendor_boot.img"
           test -s "$WORK/new/vendor_boot.img"
-          SIZE=$(stat -c '%s' "$WORK/new/vendor_boot.img")
+
+          SIZE=$(stat -c "%s" "$WORK/new/vendor_boot.img")
           MAX=$((64 * 1024 * 1024))
           echo "Merged vendor_boot size: $SIZE bytes"
           test "$SIZE" -le "$MAX"
 
-          # Re-extract and validate the final image.
+          # Validate the resulting vendor_boot v4 and byte-level preservation.
           python3 "$MKBOOTIMG/unpack_bootimg.py" --boot_img "$WORK/new/vendor_boot.img" --out "$WORK/verify"
           test "$(cat "$WORK/verify/header_version")" = "4"
           test -s "$WORK/verify/vendor_ramdisk00"
           test -s "$WORK/verify/vendor_ramdisk01"
           test -s "$WORK/verify/dtb"
-          cmp "$WORK/new/vendor_ramdisk01" "$WORK/verify/vendor_ramdisk01"
+          cmp "$WORK/stock/vendor_ramdisk00" "$WORK/verify/vendor_ramdisk00"
+          cmp "$WORK/stock/dtb" "$WORK/verify/dtb"
+          cmp "$WORK/built/ramdisk" "$WORK/verify/vendor_ramdisk01"
 
           cp -f "$WORK/new/vendor_boot.img" "$OUT/vendor_boot.img"
-          echo "Final OrangeFox vendor_boot:"
           ls -lh "$OUT/vendor_boot.img"
           sha256sum "$OUT/vendor_boot.img"
-
       - name: Show build outputs
         if: always()
         working-directory: ${{ env.FOX_ROOT }}
