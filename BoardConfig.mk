@@ -45,6 +45,12 @@ TARGET_FORCE_PREBUILT_KERNEL := true
 TARGET_PREBUILT_KERNEL := $(DEVICE_PATH)/prebuilt/kernel
 TARGET_PREBUILT_DTB := $(DEVICE_PATH)/prebuilt/dtb.img
 
+# Android vendor_boot v4 requires the stock DTB/DTBO inputs when building
+# the recovery ramdisk for vendor_boot. The build workflow materializes
+# prebuilt/dtb.img as prebuilt/dtbs/beryl.dtb before invoking the build.
+BOARD_PREBUILT_DTBOIMAGE := $(DEVICE_PATH)/prebuilt/dtbo.img
+BOARD_PREBUILT_DTBIMAGE_DIR := $(DEVICE_PATH)/prebuilt/dtbs
+
 # Stock boot/vendor_boot partition size
 BOARD_BOOTIMAGE_PARTITION_SIZE := 134217728
 BOARD_VENDOR_BOOTIMAGE_PARTITION_SIZE := 67108864
