@@ -7,8 +7,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: orangefox-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   FOX_BRANCH: "fox_16.0"
@@ -20,7 +20,7 @@ env:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 180
 
     steps:
       - name: Checkout device tree
@@ -29,54 +29,41 @@ jobs:
           lfs: true
           fetch-depth: 1
 
-      - name: Clean runner before build
+      - name: Prepare runner
         shell: bash
         run: |
           set -euxo pipefail
-          echo "Cleaning runner before OrangeFox sync..."
           rm -rf "$FOX_ROOT" "$RUNNER_TEMP/orangefox-sync" "$RUNNER_TEMP/vendorboot-merge" "$RUNNER_TEMP/mkbootimg"
           rm -rf "$CCACHE_DIR/tmp"
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/powershell /usr/local/lib/node_modules
           sudo apt-get clean
-          if command -v docker >/dev/null 2>&1; then sudo docker system prune -af || true; fi
           sync
           df -h
+          free -h
 
-      - name: Configure swap and zram
+      - name: Install build dependencies and configure swap
         shell: bash
         run: |
           set -euxo pipefail
           sudo apt-get update
-          sudo apt-get install -y zram-tools util-linux
+          sudo apt-get install -y             aria2 bc bison build-essential ccache flex gperf             lib32ncurses-dev lib32readline-dev lib32z1-dev             lz4 libncurses-dev libssl-dev libxml2-utils             rsync schedtool unzip zip zlib1g-dev util-linux
+
           if ! sudo swapon --show --noheadings | grep -q .; then
-            sudo fallocate -l 12G /swapfile
+            sudo fallocate -l 16G /swapfile
             sudo chmod 600 /swapfile
             sudo mkswap /swapfile
             sudo swapon -p 10 /swapfile
           fi
-          if command -v zramctl >/dev/null 2>&1 && sudo modprobe zram num_devices=1 2>/dev/null; then
-            ZRAM_DEV="$(sudo zramctl --find --size 8G --algorithm lz4 2>/dev/null || true)"
-            if [ -n "$ZRAM_DEV" ]; then
-              sudo mkswap "$ZRAM_DEV"
-              sudo swapon -p 100 "$ZRAM_DEV"
-            fi
-          fi
+
           free -h
           sudo swapon --show
-          sudo zramctl || true
-
-      - name: Install build dependencies
-        shell: bash
-        run: |
-          set -euxo pipefail
-          sudo apt-get update
-          sudo apt-get install -y aria2 bc bison build-essential ccache flex gperf lib32ncurses-dev lib32readline-dev lib32z1-dev lz4 libncurses-dev libssl-dev libxml2-utils rsync schedtool unzip zip zlib1g-dev
+          df -h
 
       - name: Restore ccache
         uses: actions/cache@v4
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-ofox16-${{ runner.os }}-${{ hashFiles('BoardConfig.mk', 'device.mk', 'fox_beryl.mk', 'AndroidProducts.mk') }}
+          key: ccache-ofox16-${{ runner.os }}-${{ hashFiles('BoardConfig.mk', 'device.mk', 'fox_beryl.mk', 'AndroidProducts.mk', 'vendorsetup.sh') }}
           restore-keys: |
             ccache-ofox16-${{ runner.os }}-
 
@@ -85,16 +72,12 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p "$CCACHE_DIR"
-          export USE_CCACHE=1
-          export CCACHE_EXEC="$(command -v ccache)"
-          export CCACHE_DIR="$CCACHE_DIR"
           ccache --set-config=cache_dir="$CCACHE_DIR"
           ccache --set-config=compression=true
           ccache -M 20G
-          ccache -z
           {
             echo "USE_CCACHE=1"
-            echo "CCACHE_EXEC=$CCACHE_EXEC"
+            echo "CCACHE_EXEC=$(command -v ccache)"
             echo "CCACHE_DIR=$CCACHE_DIR"
           } >> "$GITHUB_ENV"
           ccache -s
@@ -103,16 +86,17 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          rm -rf "$FOX_ROOT" "$RUNNER_TEMP/orangefox-sync"
+          rm -rf "$FOX_ROOT"
           if ! command -v repo >/dev/null 2>&1; then
-            curl -fL --retry 5 --retry-delay 3 -o "$RUNNER_TEMP/repo" https://storage.googleapis.com/git-repo-downloads/repo
+            curl -fL --retry 5 --retry-delay 3               -o "$RUNNER_TEMP/repo"               https://storage.googleapis.com/git-repo-downloads/repo
             chmod +x "$RUNNER_TEMP/repo"
             export PATH="$RUNNER_TEMP:$PATH"
           fi
+
           mkdir -p "$FOX_ROOT"
           cd "$FOX_ROOT"
           repo init -u https://gitlab.com/OrangeFox/Manifest.git -b "$FOX_BRANCH" --depth=1
-          repo sync
+          repo sync --current-branch --no-tags --optimized-fetch --prune -j"$(nproc --all)"
 
       - name: Update built-in Magisk installer
         shell: bash
@@ -122,8 +106,9 @@ jobs:
           MAGISK_DIR="$FOX_ROOT/prebuilts/magisk"
           MAGISK_APK="$MAGISK_DIR/Magisk-v${MAGISK_VERSION}.apk"
           MAGISK_ZIP="$MAGISK_DIR/Magisk-v${MAGISK_VERSION}.zip"
+
           mkdir -p "$MAGISK_DIR"
-          curl -fL --retry 5 --retry-delay 3 -o "$MAGISK_APK" "https://github.com/topjohnwu/Magisk/releases/download/v${MAGISK_VERSION}/Magisk-v${MAGISK_VERSION}.apk"
+          curl -fL --retry 5 --retry-delay 3             -o "$MAGISK_APK"             "https://github.com/topjohnwu/Magisk/releases/download/v${MAGISK_VERSION}/Magisk-v${MAGISK_VERSION}.apk"
           cp -f "$MAGISK_APK" "$MAGISK_ZIP"
           test -s "$MAGISK_ZIP"
           unzip -tq "$MAGISK_ZIP" >/dev/null
@@ -134,36 +119,36 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p "$FOX_ROOT/$DEVICE_PATH"
-          rsync -a --exclude='.git/' --exclude='.github/' --exclude='orangefox_16/' "$GITHUB_WORKSPACE/" "$FOX_ROOT/$DEVICE_PATH/"
+          rsync -a             --exclude='.git/'             --exclude='.github/'             --exclude='orangefox_16/'             "$GITHUB_WORKSPACE/" "$FOX_ROOT/$DEVICE_PATH/"
+
           test -f "$FOX_ROOT/$DEVICE_PATH/AndroidProducts.mk"
           test -f "$FOX_ROOT/$DEVICE_PATH/fox_beryl.mk"
           test -f "$FOX_ROOT/$DEVICE_PATH/BoardConfig.mk"
 
-      - name: Verify lunch target
+      - name: Configure and build recovery
         working-directory: ${{ env.FOX_ROOT }}
         shell: bash
         run: |
           set -eo pipefail
           set +u
+
           export FOX_BUILD_DEVICE=beryl
           source build/envsetup.sh
           lunch "$LUNCH_TARGET"
+
           test "$TARGET_PRODUCT" = "fox_beryl"
           test "$TARGET_BUILD_VARIANT" = "eng"
 
-      - name: Build recovery
-        working-directory: ${{ env.FOX_ROOT }}
-        shell: bash
-        run: |
-          set -eo pipefail
-          set +u
-          export FOX_BUILD_DEVICE=beryl
-          source build/envsetup.sh
-          lunch "$LUNCH_TARGET"
           export USE_CCACHE=1
           export CCACHE_EXEC="$(command -v ccache)"
           export CCACHE_DIR="${{ env.CCACHE_DIR }}"
           export FOX_USE_SPECIFIC_MAGISK_ZIP="${{ env.FOX_USE_SPECIFIC_MAGISK_ZIP }}"
+
+          echo "Build started: $(date -u)"
+          echo "CPU threads: $(nproc --all)"
+          free -h
+          df -h
+
           mka adbd recoveryimage -j"$(nproc --all)" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
       - name: Merge OrangeFox recovery ramdisk into stock vendor_boot
@@ -175,52 +160,83 @@ jobs:
           OUT="out/target/product/beryl"
           WORK="$RUNNER_TEMP/vendorboot-merge"
           MKBOOTIMG="$RUNNER_TEMP/mkbootimg"
+
           test -s "$OUT/recovery.img"
           test -s "$DEVICE_TREE/prebuilt/vendor_boot.img"
+
           rm -rf "$WORK" "$MKBOOTIMG"
-          mkdir -p "$WORK/built" "$WORK/stock" "$WORK/new"
+          mkdir -p "$WORK/built" "$WORK/stock" "$WORK/new" "$WORK/verify"
+
           for attempt in 1 2 3 4 5; do
-            if git -c http.version=HTTP/1.1 clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg "$MKBOOTIMG"; then break; fi
+            if git -c http.version=HTTP/1.1 clone --depth=1               https://android.googlesource.com/platform/system/tools/mkbootimg               "$MKBOOTIMG"; then
+              break
+            fi
             rm -rf "$MKBOOTIMG"
             sleep 5
           done
+
           test -f "$MKBOOTIMG/unpack_bootimg.py"
           test -f "$MKBOOTIMG/mkbootimg.py"
-          python3 "$MKBOOTIMG/unpack_bootimg.py" --boot_img "$OUT/recovery.img" --out "$WORK/built"
+
+          python3 "$MKBOOTIMG/unpack_bootimg.py"             --boot_img "$OUT/recovery.img"             --out "$WORK/built"
           test -s "$WORK/built/ramdisk"
-          python3 "$MKBOOTIMG/unpack_bootimg.py" --boot_img "$DEVICE_TREE/prebuilt/vendor_boot.img" --out "$WORK/stock"
+
+          python3 "$MKBOOTIMG/unpack_bootimg.py"             --boot_img "$DEVICE_TREE/prebuilt/vendor_boot.img"             --out "$WORK/stock"
+
           test -s "$WORK/stock/vendor_ramdisk00"
           test -s "$WORK/stock/vendor_ramdisk01"
           test -s "$WORK/stock/dtb"
           test -s "$WORK/stock/bootconfig"
-          if [ -f "$WORK/stock/kernel" ]; then test -s "$WORK/stock/kernel"; fi
+
+          if [ -f "$WORK/stock/kernel" ]; then
+            test -s "$WORK/stock/kernel"
+          fi
 
           python3 "$DEVICE_TREE/scripts/analyze_vendor_boot.py"             "$DEVICE_TREE/prebuilt/vendor_boot.img"             "$WORK/stock-analysis"             "$WORK/stock-report"
-          grep -Eq "ramdisk_fragment\[1\]:.*type=2 name=recovery$" "$WORK/stock-report"
+
+          grep -Eq "ramdisk_fragment\[1\]:.*type=2 name=recovery$"             "$WORK/stock-report"
 
           cp -f "$WORK/built/ramdisk" "$WORK/stock/vendor_ramdisk01"
-          python3 "$MKBOOTIMG/unpack_bootimg.py" --boot_img "$DEVICE_TREE/prebuilt/vendor_boot.img" --out "$WORK/stock" --format=mkbootimg -0 > "$WORK/mkbootimg_args"
+
+          python3 "$MKBOOTIMG/unpack_bootimg.py"             --boot_img "$DEVICE_TREE/prebuilt/vendor_boot.img"             --out "$WORK/stock"             --format=mkbootimg -0 > "$WORK/mkbootimg_args"
+
           declare -a MKBOOTIMG_ARGS=()
-          while IFS= read -r -d "" ARG; do MKBOOTIMG_ARGS+=("$ARG"); done < "$WORK/mkbootimg_args"
+          while IFS= read -r -d "" ARG; do
+            MKBOOTIMG_ARGS+=("$ARG")
+          done < "$WORK/mkbootimg_args"
+
           found_recovery=0
           for i in "${!MKBOOTIMG_ARGS[@]}"; do
-            if [ "${MKBOOTIMG_ARGS[$i]}" = "$WORK/stock/vendor_ramdisk01" ]; then found_recovery=1; break; fi
+            if [ "${MKBOOTIMG_ARGS[$i]}" = "$WORK/stock/vendor_ramdisk01" ]; then
+              found_recovery=1
+              break
+            fi
           done
           test "$found_recovery" = 1
-          python3 "$MKBOOTIMG/mkbootimg.py" "${MKBOOTIMG_ARGS[@]}" --vendor_boot "$WORK/new/vendor_boot.img"
+
+          python3 "$MKBOOTIMG/mkbootimg.py"             "${MKBOOTIMG_ARGS[@]}"             --vendor_boot "$WORK/new/vendor_boot.img"
+
           test -s "$WORK/new/vendor_boot.img"
+
           SIZE=$(stat -c "%s" "$WORK/new/vendor_boot.img")
           test "$SIZE" -le $((64 * 1024 * 1024))
-          python3 "$MKBOOTIMG/unpack_bootimg.py" --boot_img "$WORK/new/vendor_boot.img" --out "$WORK/verify"
+
+          python3 "$MKBOOTIMG/unpack_bootimg.py"             --boot_img "$WORK/new/vendor_boot.img"             --out "$WORK/verify"
+
           test "$(cat "$WORK/verify/header_version")" = "4"
           cmp "$WORK/stock/vendor_ramdisk00" "$WORK/verify/vendor_ramdisk00"
           cmp "$WORK/stock/dtb" "$WORK/verify/dtb"
           cmp "$WORK/stock/bootconfig" "$WORK/verify/bootconfig"
-          if [ -f "$WORK/stock/kernel" ]; then cmp "$WORK/stock/kernel" "$WORK/verify/kernel"; fi
+
+          if [ -f "$WORK/stock/kernel" ]; then
+            cmp "$WORK/stock/kernel" "$WORK/verify/kernel"
+          fi
+
           cmp "$WORK/built/ramdisk" "$WORK/verify/vendor_ramdisk01"
 
           python3 "$DEVICE_TREE/scripts/analyze_vendor_boot.py"             "$WORK/new/vendor_boot.img"             "$WORK/final-analysis"             "$WORK/final-report"
-          grep -Eq "ramdisk_fragment\[1\]:.*type=2 name=recovery$" "$WORK/final-report"
+
+          grep -Eq "ramdisk_fragment\[1\]:.*type=2 name=recovery$"             "$WORK/final-report"
 
           cp -f "$WORK/new/vendor_boot.img" "$OUT/vendor_boot.img"
 
@@ -231,11 +247,30 @@ jobs:
         run: |
           set +e
           OUT="out/target/product/beryl"
+
+          echo "=== Build outputs ==="
           ls -lah "$OUT" 2>/dev/null || true
-          find "$OUT" -maxdepth 1 -type f \( -name '*recovery*.img' -o -name 'vendor_boot*.img' \) -printf '%p %s bytes\\n' 2>/dev/null || true
+          find "$OUT" -maxdepth 1 -type f             \( -name '*recovery*.img' -o -name 'vendor_boot*.img' \)             -printf '%p %s bytes\n' 2>/dev/null || true
+
+          echo "=== ccache ==="
           ccache -s || true
+
+          echo "=== resources ==="
           df -h
           free -h
+          sudo swapon --show || true
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orangefox-beryl-build-logs
+          path: |
+            ${{ github.workspace }}/build.log
+            ${{ env.FOX_ROOT }}/out/soong/.ninja_log
+            ${{ env.FOX_ROOT }}/out/verbose.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload recovery image
         if: success()
@@ -245,5 +280,5 @@ jobs:
           path: |
             ${{ env.FOX_ROOT }}/out/target/product/beryl/recovery.img
             ${{ env.FOX_ROOT }}/out/target/product/beryl/vendor_boot.img
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 7
