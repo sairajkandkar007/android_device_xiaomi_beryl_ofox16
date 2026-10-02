@@ -100,24 +100,14 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          rm -rf "$FOX_ROOT"
+          rm -rf "$FOX_ROOT" "$RUNNER_TEMP/orangefox-sync"
           mkdir -p "$FOX_ROOT"
           git clone --depth=1 --filter=blob:none --single-branch --branch master \
-            https://github.com/OrangeFox16/sync.git "$RUNNER_TEMP/orangefox-sync"
+            https://gitlab.com/OrangeFox/sync.git "$RUNNER_TEMP/orangefox-sync"
           cd "$RUNNER_TEMP/orangefox-sync"
-
-          # Use the sync helper's supported argument forwarding instead of
-          # modifying its shell source in CI. This keeps the workflow robust
-          # against quoting/shell changes in the upstream helper.
-          ./orangefox_sync.sh \
-            --branch "$FOX_BRANCH" \
-            --path "$FOX_ROOT" \
-            -- \
-            -j"$(nproc --all)" \
-            --no-tags \
-            --optimized-fetch \
-            --prune \
-            --current-branch
+          # Official OrangeFox syntax: branch + absolute path.
+          # The helper performs the repo initialization/sync itself.
+          ./orangefox_sync.sh --branch "$FOX_BRANCH" --path "$FOX_ROOT"
       - name: Update built-in Magisk installer
         shell: bash
         run: |
@@ -263,6 +253,22 @@ jobs:
           ccache -s || true
           df -h
           free -h
+
+      - name: Cleanup workspace
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          echo "Cleaning temporary sync/build state..."
+          rm -rf "$RUNNER_TEMP/orangefox-sync"
+          rm -rf "$RUNNER_TEMP/vendorboot-merge"
+          rm -rf "$RUNNER_TEMP/mkbootimg"
+          rm -rf "$FOX_ROOT/.repo"
+          rm -rf "$FOX_ROOT/.git"
+          rm -rf "$CCACHE_DIR/tmp"
+          sync
+          df -h
+          du -sh "$FOX_ROOT" 2>/dev/null || true
 
       - name: Upload recovery image
         if: success()
