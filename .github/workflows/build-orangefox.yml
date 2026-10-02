@@ -12,7 +12,7 @@ concurrency:
 
 env:
   FOX_BRANCH: "16.0"
-  FOX_ROOT: ${{ github.workspace }}/fox_16.0
+  FOX_ROOT: ${{ github.workspace }}/orangefox_16
   DEVICE_PATH: device/xiaomi/beryl
   LUNCH_TARGET: fox_beryl-ap2a-eng
   CCACHE_DIR: ${{ github.workspace }}/.ccache
@@ -104,11 +104,15 @@ jobs:
         run: |
           set -euxo pipefail
           rm -rf "$FOX_ROOT" "$RUNNER_TEMP/orangefox-sync"
+          if ! command -v repo >/dev/null 2>&1; then
+            curl -fL --retry 5 --retry-delay 3 -o "$RUNNER_TEMP/repo" https://storage.googleapis.com/git-repo-downloads/repo
+            chmod +x "$RUNNER_TEMP/repo"
+            export PATH="$RUNNER_TEMP:$PATH"
+          fi
           mkdir -p "$FOX_ROOT"
-          git clone --depth=1 --filter=blob:none --single-branch --branch master \
-            https://gitlab.com/OrangeFox/sync.git "$RUNNER_TEMP/orangefox-sync"
-          cd "$RUNNER_TEMP/orangefox-sync"
-          ./orangefox_sync.sh --branch "$FOX_BRANCH" --path "$FOX_ROOT"
+          cd "$FOX_ROOT"
+          repo init -u https://gitlab.com/OrangeFox/Manifest.git -b "$FOX_BRANCH" --depth=1
+          repo sync
 
       - name: Update built-in Magisk installer
         shell: bash
