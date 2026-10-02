@@ -16,20 +16,7 @@ TARGET_BOARD_PLATFORM := mt6855
 
 # A/B device
 AB_OTA_UPDATER := true
-AB_OTA_PARTITIONS += \
-    boot \
-    dtbo \
-    system \
-    system_ext \
-    product \
-    vendor \
-    vendor_dlkm \
-    odm_dlkm \
-    system_dlkm \
-    vbmeta \
-    vbmeta_system \
-    vbmeta_vendor \
-    vendor_boot
+AB_OTA_PARTITIONS +=     boot     dtbo     system     system_ext     product     vendor     vendor_dlkm     odm_dlkm     system_dlkm     vbmeta     vbmeta_system     vbmeta_vendor     vendor_boot
 
 # Boot image format
 BOARD_BOOT_HEADER_VERSION := 4
@@ -45,9 +32,8 @@ TARGET_FORCE_PREBUILT_KERNEL := true
 TARGET_PREBUILT_KERNEL := $(DEVICE_PATH)/prebuilt/kernel
 TARGET_PREBUILT_DTB := $(DEVICE_PATH)/prebuilt/dtb.img
 
-# Android vendor_boot v4 requires the stock DTB/DTBO inputs when building
-# the recovery ramdisk for vendor_boot. The build workflow materializes
-# prebuilt/dtb.img as prebuilt/dtbs/beryl.dtb before invoking the build.
+# Android 16 vendor_boot v4 recovery integration.
+BOARD_INCLUDE_DTB_IN_BOOTIMG := true
 BOARD_PREBUILT_DTBOIMAGE := $(DEVICE_PATH)/prebuilt/dtbo.img
 BOARD_PREBUILT_DTBIMAGE_DIR := $(DEVICE_PATH)/prebuilt/dtbs
 
@@ -68,7 +54,6 @@ TARGET_COPY_OUT_VENDOR := vendor
 TARGET_RECOVERY_FSTAB := $(DEVICE_PATH)/recovery.fstab
 
 # Android 16 recovery crypto/FBE configuration.
-# Beryl stock userdata uses fscrypt v2 with metadata encryption.
 TW_INCLUDE_CRYPTO := true
 TW_INCLUDE_FBE := true
 TW_INCLUDE_FBE_METADATA_DECRYPT := true
@@ -77,19 +62,18 @@ OF_USE_DMCTL := 1
 OF_LOAD_DEFAULT_LANGUAGE_BEFORE_DECRYPT := 1
 OF_SKIP_POST_DECRYPT_THEME_RELOAD := 1
 
-# MediaTek vendor_boot recovery layout used by the stock Beryl image.
+# MediaTek vendor_boot recovery layout used by stock Beryl.
 BOARD_USES_MTK_HARDWARE := true
 BOARD_USES_GENERIC_KERNEL_IMAGE := true
 BOARD_EXCLUDE_KERNEL_FROM_RECOVERY_IMAGE := true
 BOARD_MOVE_RECOVERY_RESOURCES_TO_VENDOR_BOOT := true
+BOARD_MOVE_GSI_AVB_KEYS_TO_VENDOR_BOOT := true
 BOARD_INCLUDE_RECOVERY_RAMDISK_IN_VENDOR_BOOT := true
 
 TARGET_USERIMAGES_USE_EXT4 := true
 TARGET_USERIMAGES_USE_F2FS := true
 
-# Stock recovery lives in vendor_boot's vendor ramdisk.
-# Keep the stock vendor ramdisk during the first integration pass.
-# UI
+# Stock recovery lives in vendor_boot's recovery ramdisk fragment.
 TW_THEME := portrait_hdpi
 TW_EXTRA_LANGUAGES := true
 TW_SCREEN_BLANK_ON_BOOT := true
