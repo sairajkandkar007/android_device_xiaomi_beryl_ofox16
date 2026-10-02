@@ -16,6 +16,8 @@ env:
   DEVICE_PATH: device/xiaomi/beryl
   LUNCH_TARGET: fox_beryl-ap2a-eng
   CCACHE_DIR: ${{ github.workspace }}/.ccache
+  BUILD_JOBS: "4"
+  REPO_JOBS: "4"
 
 jobs:
   build:
@@ -24,7 +26,7 @@ jobs:
 
     steps:
       - name: Checkout device tree
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           lfs: true
           fetch-depth: 1
@@ -34,9 +36,9 @@ jobs:
         run: |
           set -euxo pipefail
           rm -rf "$FOX_ROOT" "$RUNNER_TEMP/orangefox-sync" "$RUNNER_TEMP/vendorboot-merge" "$RUNNER_TEMP/mkbootimg"
+          # GitHub-hosted runners are already provisioned as clean machines.
+          # Avoid deleting preinstalled toolchains; that only adds I/O and time.
           rm -rf "$CCACHE_DIR/tmp"
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/powershell /usr/local/lib/node_modules
-          sudo apt-get clean
           sync
           df -h
           free -h
@@ -55,12 +57,21 @@ jobs:
             sudo swapon -p 10 /swapfile
           fi
 
+          if command -v zramctl >/dev/null 2>&1 && sudo modprobe zram num_devices=1 2>/dev/null; then
+            ZRAM_DEV="$(sudo zramctl --find --size 8G --algorithm lz4 2>/dev/null || true)"
+            if [ -n "$ZRAM_DEV" ]; then
+              sudo mkswap "$ZRAM_DEV"
+              sudo swapon -p 100 "$ZRAM_DEV"
+            fi
+          fi
+
           free -h
           sudo swapon --show
+          sudo zramctl || true
           df -h
 
       - name: Restore ccache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-ofox16-${{ runner.os }}-${{ hashFiles('BoardConfig.mk', 'device.mk', 'fox_beryl.mk', 'AndroidProducts.mk', 'vendorsetup.sh') }}
@@ -96,7 +107,7 @@ jobs:
           mkdir -p "$FOX_ROOT"
           cd "$FOX_ROOT"
           repo init -u https://gitlab.com/OrangeFox/Manifest.git -b "$FOX_BRANCH" --depth=1
-          repo sync --current-branch --no-tags --optimized-fetch --prune -j"$(nproc --all)"
+          repo sync --current-branch --no-tags --optimized-fetch --prune -j"$REPO_JOBS"
 
       - name: Update built-in Magisk installer
         shell: bash
@@ -149,7 +160,13 @@ jobs:
           free -h
           df -h
 
-          mka adbd recoveryimage -j"$(nproc --all)" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+          echo "Build parallelism: $BUILD_JOBS"
+          set +e
+          mka adbd recoveryimage -j"$BUILD_JOBS" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+          BUILD_STATUS=${PIPESTATUS[0]}
+          set -e
+          echo "mka exit status: $BUILD_STATUS"
+          exit "$BUILD_STATUS"
 
       - name: Merge OrangeFox recovery ramdisk into stock vendor_boot
         working-directory: ${{ env.FOX_ROOT }}
@@ -240,6 +257,74 @@ jobs:
 
           cp -f "$WORK/new/vendor_boot.img" "$OUT/vendor_boot.img"
 
+      - name: Strict vendor_boot audit
+        if: success()
+        working-directory: ${{ env.FOX_ROOT }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          OUT="out/target/product/beryl"
+          REPORT="$GITHUB_WORKSPACE/vendor_boot-audit.txt"
+
+          test -s "$OUT/vendor_boot.img"
+          python3 "$GITHUB_WORKSPACE/scripts/audit_vendor_boot.py" \\
+            "$OUT/vendor_boot.img" \\
+            "$GITHUB_WORKSPACE/prebuilt/vendor_boot.img" \\
+            "$REPORT"
+          test -s "$REPORT"
+          grep -q '^RESULT=PASS        if: always()
+        working-directory: ${{ env.FOX_ROOT }}
+        shell: bash
+        run: |
+          set +e
+          OUT="out/target/product/beryl"
+
+          echo "=== Build outputs ==="
+          ls -lah "$OUT" 2>/dev/null || true
+          find "$OUT" -maxdepth 1 -type f             \( -name '*recovery*.img' -o -name 'vendor_boot*.img' \)             -printf '%p %s bytes\n' 2>/dev/null || true
+
+          echo "=== ccache ==="
+          ccache -s || true
+
+          echo "=== resources ==="
+          df -h
+          free -h
+          sudo swapon --show || true
+          sudo zramctl || true
+
+          echo "=== build log tail ==="
+          tail -n 200 "$GITHUB_WORKSPACE/build.log" 2>/dev/null || true
+
+          echo "=== vendor_boot audit ==="
+          cat "$GITHUB_WORKSPACE/vendor_boot-audit.txt" 2>/dev/null || true
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: orangefox-beryl-build-logs
+          path: |
+            ${{ github.workspace }}/build.log
+            ${{ env.FOX_ROOT }}/out/soong/.ninja_log
+            ${{ env.FOX_ROOT }}/out/verbose.log
+            ${{ github.workspace }}/vendor_boot-audit.txt
+          if-no-files-found: ignore
+          retention-days: 7
+          compression-level: 0
+
+      - name: Upload recovery image
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orangefox-beryl-recovery
+          path: |
+            ${{ env.FOX_ROOT }}/out/target/product/beryl/recovery.img
+            ${{ env.FOX_ROOT }}/out/target/product/beryl/vendor_boot.img
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+ "$REPORT"
+
       - name: Show build outputs
         if: always()
         working-directory: ${{ env.FOX_ROOT }}
@@ -262,7 +347,7 @@ jobs:
 
       - name: Upload build logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: orangefox-beryl-build-logs
           path: |
