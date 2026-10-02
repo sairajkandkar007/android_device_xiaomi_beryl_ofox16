@@ -14,7 +14,7 @@ env:
   FOX_BRANCH: "fox_16.0"
   FOX_ROOT: ${{ github.workspace }}/orangefox_16
   DEVICE_PATH: device/xiaomi/beryl
-  LUNCH_TARGET: fox_beryl-ap2a-eng
+  LUNCH_TARGET: fox_beryl-bp2a-eng
   BUILD_JOBS: "2"
   REPO_JOBS: "16"
   CCACHE_DIR: ${{ github.workspace }}/.ccache
