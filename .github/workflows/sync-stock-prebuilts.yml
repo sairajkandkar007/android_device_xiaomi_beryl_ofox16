@@ -294,8 +294,8 @@ jobs:
                       src="work$service_bin"
                       if [ -f "$src" ]; then
                         root_rel=${service_bin#/}
-                        mkdir -p "prebuilt/decryption/config/service_bins/$(dirname "$root_rel")"
-                        cp -a "$src" "prebuilt/decryption/config/service_bins/$root_rel"
+                        mkdir -p "prebuilt/decryption/services/$(dirname "$root_rel")"
+                        cp -a "$src" "prebuilt/decryption/services/$root_rel"
                         printf 'SERVICE %s %s\n' "$service_name" "$service_bin" >> work/key_service_scan.txt
                       else
                         printf 'MISSING_SERVICE_BINARY %s %s\n' "$service_name" "$service_bin" >> work/key_service_scan.txt
