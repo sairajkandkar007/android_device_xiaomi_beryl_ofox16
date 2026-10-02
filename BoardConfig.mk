@@ -2,8 +2,6 @@
 
 DEVICE_PATH := device/xiaomi/beryl
 
-ALLOW_MISSING_DEPENDENCIES := true
-
 # Architecture / SoC
 TARGET_ARCH := arm64
 TARGET_ARCH_VARIANT := armv8-a
@@ -16,7 +14,20 @@ TARGET_BOARD_PLATFORM := mt6855
 
 # A/B device
 AB_OTA_UPDATER := true
-AB_OTA_PARTITIONS +=     boot     dtbo     system     system_ext     product     vendor     vendor_dlkm     odm_dlkm     system_dlkm     vbmeta     vbmeta_system     vbmeta_vendor     vendor_boot
+AB_OTA_PARTITIONS += \
+    boot \
+    dtbo \
+    system \
+    system_ext \
+    product \
+    vendor \
+    vendor_dlkm \
+    odm_dlkm \
+    system_dlkm \
+    vbmeta \
+    vbmeta_system \
+    vbmeta_vendor \
+    vendor_boot
 
 # Boot image format
 BOARD_BOOT_HEADER_VERSION := 4
@@ -33,7 +44,6 @@ TARGET_PREBUILT_KERNEL := $(DEVICE_PATH)/prebuilt/kernel
 TARGET_PREBUILT_DTB := $(DEVICE_PATH)/prebuilt/dtb.img
 
 # Android 16 vendor_boot v4 recovery integration.
-BOARD_INCLUDE_DTB_IN_BOOTIMG := true
 BOARD_PREBUILT_DTBOIMAGE := $(DEVICE_PATH)/prebuilt/dtbo.img
 BOARD_PREBUILT_DTBIMAGE_DIR := $(DEVICE_PATH)/prebuilt/dtbs
 
