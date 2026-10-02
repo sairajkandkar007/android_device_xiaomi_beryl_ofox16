@@ -323,6 +323,97 @@ jobs:
                prebuilt/decryption/config/service_bins \
                -type f -print 2>/dev/null | sort || true
 
+          echo "=== Resolve ELF dependencies of discovered key services ==="
+          mkdir -p prebuilt/decryption/config/service_deps
+          : > work/key_service_deps.txt
+
+          # Follow DT_NEEDED recursively from the exact stock service binaries.
+          # This discovers the real Beryl MITEE/KeyMint/Gatekeeper dependency
+          # chain instead of copying files based only on their filenames.
+          #
+          # Dependencies are resolved against the extracted stock /vendor,
+          # /system, /system_ext and /product trees. Nothing is copied from Klee
+          # or another device.
+          if command -v readelf >/dev/null 2>&1; then
+            declare -A seen_deps=()
+            resolve_elf() {
+              local src="$1"
+              local depth="${2:-0}"
+              [ -f "$src" ] || return 0
+              [ "$depth" -le 20 ] || return 0
+
+              local key="${src#work/}"
+              if [ -n "${seen_deps[$key]:-}" ]; then
+                return 0
+              fi
+              seen_deps["$key"]=1
+
+              local root_rel="${src#work/}"
+              local out="prebuilt/decryption/config/service_deps/$root_rel"
+              mkdir -p "$(dirname "$out")"
+              cp -a "$src" "$out"
+
+              local dep
+              while IFS= read -r dep; do
+                [ -n "$dep" ] || continue
+                case "$dep" in
+                  /*)
+                    ;;
+                  *)
+                    continue
+                    ;;
+                esac
+
+                local candidate=""
+                for base in work/vendor work/system work/system_ext work/product; do
+                  if [ -f "$base$dep" ]; then
+                    candidate="$base$dep"
+                    break
+                  fi
+                done
+
+                if [ -z "$candidate" ]; then
+                  printf 'MISSING_DEP %s %s\n' "$root_rel" "$dep" >> work/key_service_deps.txt
+                  continue
+                fi
+
+                printf 'DEP %s -> %s\n' "$root_rel" "${candidate#work/}" >> work/key_service_deps.txt
+                resolve_elf "$candidate" "$((depth + 1))"
+              done < <(
+                readelf -d "$src" 2>/dev/null |
+                  awk '/NEEDED/ {
+                    gsub(/[][]/, "", $NF)
+                    print $NF
+                  }' |
+                  sort -u
+              )
+            }
+
+            while IFS= read -r service_bin; do
+              [ -n "$service_bin" ] || continue
+              case "$service_bin" in
+                /vendor/*|/system/*|/system_ext/*|/product/*)
+                  src="work$service_bin"
+                  if [ -f "$src" ]; then
+                    resolve_elf "$src"
+                  fi
+                  ;;
+              esac
+            done < <(
+              awk '$1=="SERVICE" {print $3}' work/key_service_scan.txt 2>/dev/null |
+                sort -u
+            )
+          else
+            echo "readelf is unavailable; skipping ELF dependency resolution."
+          fi
+
+          printf '%s\n'             "ELF dependency scan complete."             "Resolved payload:"             > prebuilt/decryption/config/service_deps/README.txt
+          find prebuilt/decryption/config/service_deps -type f             -printf '%P\n' | sort >> prebuilt/decryption/config/service_deps/README.txt
+
+          cp work/key_service_deps.txt prebuilt/decryption/config/key-service-deps.txt
+          echo "=== Key-service ELF dependency scan ==="
+          cat prebuilt/decryption/config/key-service-deps.txt 2>/dev/null || true
+
           # Search policy for decryption-related domains/rules; retain the stock
           # policy files as evidence rather than modifying policy automatically.
           find work/vendor/etc/selinux -type f \
