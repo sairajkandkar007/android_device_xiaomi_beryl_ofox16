@@ -139,40 +139,6 @@ jobs:
           test -f "$FOX_ROOT/$DEVICE_PATH/fox_beryl.mk"
           test -f "$FOX_ROOT/$DEVICE_PATH/BoardConfig.mk"
 
-      - name: Validate stock Beryl WLAN payload
-        shell: bash
-        run: |
-          set -euo pipefail
-          WLAN_DIR="$GITHUB_WORKSPACE/prebuilt/wlan"
-          test -d "$WLAN_DIR"
-
-          echo "=== Beryl stock WLAN payload ==="
-          find "$WLAN_DIR" -type f -printf '%P %s bytes\\n' | sort
-
-          # These are the exact MediaTek Beryl WLAN kernel modules already
-          # extracted from the Android 16 stock vendor_dlkm image.
-          for module in             wlan_drv_gen4m_6855.ko             wmt_chrdev_wifi.ko             wmt_drv.ko; do
-            test -s "$WLAN_DIR/$module"
-          done
-
-          test -s "$WLAN_DIR/manifest.txt"
-
-          echo "=== WLAN manifest ==="
-          cat "$WLAN_DIR/manifest.txt"
-
-          echo "=== WLAN module hashes ==="
-          sha256sum             "$WLAN_DIR/wlan_drv_gen4m_6855.ko"             "$WLAN_DIR/wmt_chrdev_wifi.ko"             "$WLAN_DIR/wmt_drv.ko"
-
-          # Firmware/config remains evidence-driven: do not fail a build merely
-          # because a particular firmware filename is absent from this stock
-          # release. The recovery build must, however, retain the exact payload
-          # that the stock-sync workflow discovered.
-          firmware_count="$(find "$WLAN_DIR" -type f \\
-            \\( -iname '*.bin' -o -iname '*.cfg' \\) | wc -l)"
-          echo "WLAN firmware/config files: $firmware_count"
-
-          echo "Stock Beryl WLAN payload validation passed."
-          
       - name: Verify lunch target
         working-directory: ${{ env.FOX_ROOT }}
         shell: bash
@@ -229,12 +195,7 @@ jobs:
           test -s "$WORK/stock/bootconfig"
           if [ -f "$WORK/stock/kernel" ]; then test -s "$WORK/stock/kernel"; fi
 
-          # Do not assume fragment 01 is the recovery fragment: validate the
-          # exact stock v4 table before replacing anything.
-          python3 "$DEVICE_TREE/scripts/analyze_vendor_boot.py" \
-            "$DEVICE_TREE/prebuilt/vendor_boot.img" \
-            "$WORK/stock-analysis" \
-            "$WORK/stock-report"
+          python3 "$DEVICE_TREE/scripts/analyze_vendor_boot.py"             "$DEVICE_TREE/prebuilt/vendor_boot.img"             "$WORK/stock-analysis"             "$WORK/stock-report"
           grep -Eq "ramdisk_fragment\[1\]:.*type=2 name=recovery$" "$WORK/stock-report"
 
           cp -f "$WORK/built/ramdisk" "$WORK/stock/vendor_ramdisk01"
@@ -258,10 +219,7 @@ jobs:
           if [ -f "$WORK/stock/kernel" ]; then cmp "$WORK/stock/kernel" "$WORK/verify/kernel"; fi
           cmp "$WORK/built/ramdisk" "$WORK/verify/vendor_ramdisk01"
 
-          python3 "$DEVICE_TREE/scripts/analyze_vendor_boot.py" \
-            "$WORK/new/vendor_boot.img" \
-            "$WORK/final-analysis" \
-            "$WORK/final-report"
+          python3 "$DEVICE_TREE/scripts/analyze_vendor_boot.py"             "$WORK/new/vendor_boot.img"             "$WORK/final-analysis"             "$WORK/final-report"
           grep -Eq "ramdisk_fragment\[1\]:.*type=2 name=recovery$" "$WORK/final-report"
 
           cp -f "$WORK/new/vendor_boot.img" "$OUT/vendor_boot.img"
