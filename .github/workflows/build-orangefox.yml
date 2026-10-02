@@ -162,7 +162,7 @@ jobs:
 
           echo "Build parallelism: $BUILD_JOBS"
           set +e
-          mka adbd recoveryimage -j"$BUILD_JOBS" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+          m recoveryimage -j"$BUILD_JOBS" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
           BUILD_STATUS=${PIPESTATUS[0]}
           set -e
           echo "mka exit status: $BUILD_STATUS"
