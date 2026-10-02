@@ -59,8 +59,7 @@ if version >= 4:
         f"vendor_ramdisk_table_entry_size={table_entry_size}",
         f"bootconfig_size={bootconfig_size}",
     ])
-    table_base = math.ceil((ramdisk_base + ramdisk_size + dtb_size) / page_size) * page_size
-    info.append(f"ramdisk_table_base=0x{table_base:x}")
+    # A vendor_boot v4 image pads each major region independently to a page boundary.\n    # Calculate the table base as AOSP does: header pages + ramdisk pages + DTB pages.\n    header_pages = math.ceil(header_size / page_size)\n    ramdisk_pages = math.ceil(ramdisk_size / page_size)\n    dtb_pages = math.ceil(dtb_size / page_size)\n    table_base = page_size * (header_pages + ramdisk_pages + dtb_pages)\n    info.append(f"ramdisk_table_base=0x{table_base:x}")
 
     if table_entry_size == 108 and table_count * table_entry_size <= table_size:
         for i in range(table_count):
