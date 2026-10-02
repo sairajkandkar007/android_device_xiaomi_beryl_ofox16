@@ -277,32 +277,34 @@ jobs:
           mkdir -p prebuilt/decryption/services/init/vendor prebuilt/decryption/services/init/system
           : > work/key_service_scan.txt
 
+          # Only parse explicitly relevant security/crypto init files.
+          # Do not collect unrelated vendor services into the recovery payload.
           while IFS= read -r rc; do
             case "$rc" in
               *keymint*.rc|*keymaster*.rc|*gatekeeper*.rc|*tee-supplicant*.rc|*keystore*.rc|*vold*.rc)
                 rel=${rc#work/vendor/etc/init/}
-                mkdir -p "prebuilt/decryption/services/init/vendor/$(dirname "$rel")"
-                cp -a "$rc" "prebuilt/decryption/services/init/vendor/$rel"
+                mkdir -p prebuilt/decryption/config/vendor_init
+                cp -a "$rc" "prebuilt/decryption/config/vendor_init/$rel"
                 printf 'VENDOR_RC %s\n' "$rel" >> work/key_service_scan.txt
+
+                while read -r service_name service_bin _; do
+                  [ -n "$service_name" ] || continue
+                  case "$service_bin" in
+                    /vendor/*|/system/*|/system_ext/*|/product/*)
+                      src="work$service_bin"
+                      if [ -f "$src" ]; then
+                        root_rel=${service_bin#/}
+                        mkdir -p "prebuilt/decryption/config/service_bins/$(dirname "$root_rel")"
+                        cp -a "$src" "prebuilt/decryption/config/service_bins/$root_rel"
+                        printf 'SERVICE %s %s\n' "$service_name" "$service_bin" >> work/key_service_scan.txt
+                      else
+                        printf 'MISSING_SERVICE_BINARY %s %s\n' "$service_name" "$service_bin" >> work/key_service_scan.txt
+                      fi
+                      ;;
+                  esac
+                done < <(awk '$1=="service" && NF>=3 {print $2, $3}' "$rc" 2>/dev/null)
                 ;;
             esac
-
-            while read -r service_name service_bin _; do
-              [ -n "$service_name" ] || continue
-              case "$service_bin" in
-                /vendor/*|/system/*|/system_ext/*|/product/*)
-                  src="work$service_bin"
-                  if [ -f "$src" ]; then
-                    root_rel=${service_bin#/}
-                    mkdir -p "prebuilt/decryption/services/bins/$(dirname "$root_rel")"
-                    cp -a "$src" "prebuilt/decryption/services/bins/$root_rel"
-                    printf 'SERVICE %s %s\n' "$service_name" "$service_bin" >> work/key_service_scan.txt
-                  else
-                    printf 'MISSING_SERVICE_BINARY %s %s\n' "$service_name" "$service_bin" >> work/key_service_scan.txt
-                  fi
-                  ;;
-              esac
-            done < <(awk '$1=="service" && NF>=3 {print $2, $3}' "$rc" 2>/dev/null)
           done < <(find work/vendor/etc/init -type f -name '*.rc' -print 2>/dev/null)
 
           if [ -d work/system/etc/init ]; then
