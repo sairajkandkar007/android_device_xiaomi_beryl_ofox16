@@ -221,7 +221,7 @@ jobs:
       - name: Search and copy stock decryption support
         run: |
           rm -rf prebuilt/decryption work/system work/key_service_scan.txt work/key_service_deps.txt
-          mkdir -p prebuilt/decryption/vendor prebuilt/decryption/system prebuilt/decryption/config
+          mkdir -p prebuilt/decryption/vendor prebuilt/decryption/system prebuilt/decryption/config prebuilt/decryption/evidence
 
           # Extract vendor here as well because this step runs before the
           # dedicated SELinux/boot-control vendor extraction step below.
@@ -274,7 +274,7 @@ jobs:
           # Gatekeeper and TEE services. Do not guess service binary names:
           # parse the stock .rc "service <name> <binary>" declarations and
           # copy the referenced executable when it exists.
-          mkdir -p prebuilt/decryption/services/init/vendor prebuilt/decryption/services/init/system
+          mkdir -p prebuilt/decryption/config/vendor_init prebuilt/decryption/config/system_init
           : > work/key_service_scan.txt
 
           # Only parse explicitly relevant security/crypto init files.
@@ -312,8 +312,8 @@ jobs:
               case "$rc" in
                 *keymint*.rc|*keymaster*.rc|*gatekeeper*.rc|*tee-supplicant*.rc|*keystore*.rc|*vold*.rc)
                   rel=${rc#work/system/etc/init/}
-                  mkdir -p "prebuilt/decryption/services/init/system/$(dirname "$rel")"
-                  cp -a "$rc" "prebuilt/decryption/services/init/system/$rel"
+                  mkdir -p "prebuilt/decryption/config/system_init/$(dirname "$rel")"
+                  cp -a "$rc" "prebuilt/decryption/config/system_init/$rel"
                   printf 'SYSTEM_RC %s\n' "$rel" >> work/key_service_scan.txt
                   ;;
               esac
@@ -322,16 +322,16 @@ jobs:
 
           echo "=== KeyMint/Keymaster/Gatekeeper/TEE service scan ==="
           cat work/key_service_scan.txt 2>/dev/null || true
-          cp work/key_service_scan.txt prebuilt/decryption/services/key-service-scan.txt
+          cp work/key_service_scan.txt prebuilt/decryption/evidence/key-service-scan.txt
 
           echo "=== Discovered key-service payload ==="
-          find prebuilt/decryption/services/init/vendor \
-               prebuilt/decryption/services/init/system \
-               prebuilt/decryption/services/bins \
+          find prebuilt/decryption/config/vendor_init \
+               prebuilt/decryption/config/system_init \
+               prebuilt/decryption/services \
                -type f -print 2>/dev/null | sort || true
 
           echo "=== Resolve ELF dependencies of discovered key services ==="
-          mkdir -p prebuilt/decryption/services/deps
+          mkdir -p prebuilt/decryption/dependencies
           : > work/key_service_deps.txt
 
           # Follow DT_NEEDED recursively from the exact stock service binaries.
@@ -356,7 +356,7 @@ jobs:
               seen_deps["$key"]=1
 
               local root_rel="${src#work/}"
-              local out="prebuilt/decryption/services/deps/$root_rel"
+              local out="prebuilt/decryption/dependencies/$root_rel"
               mkdir -p "$(dirname "$out")"
               cp -a "$src" "$out"
 
@@ -414,12 +414,12 @@ jobs:
             echo "readelf is unavailable; skipping ELF dependency resolution."
           fi
 
-          printf '%s\n'             "ELF dependency scan complete."             "Resolved payload:"             > prebuilt/decryption/services/deps/README.txt
-          find prebuilt/decryption/services/deps -type f             -printf '%P\n' | sort >> prebuilt/decryption/services/deps/README.txt
+          printf '%s\n'             "ELF dependency scan complete."             "Resolved payload:"             > prebuilt/decryption/dependencies/README.txt
+          find prebuilt/decryption/dependencies -type f             -printf '%P\n' | sort >> prebuilt/decryption/dependencies/README.txt
 
-          cp work/key_service_deps.txt prebuilt/decryption/services/key-service-deps.txt
+          cp work/key_service_deps.txt prebuilt/decryption/evidence/key-service-deps.txt
           echo "=== Key-service ELF dependency scan ==="
-          cat prebuilt/decryption/services/key-service-deps.txt 2>/dev/null || true
+          cat prebuilt/decryption/evidence/key-service-deps.txt 2>/dev/null || true
 
           # Search policy for decryption-related domains/rules; retain the stock
           # policy files as evidence rather than modifying policy automatically.
