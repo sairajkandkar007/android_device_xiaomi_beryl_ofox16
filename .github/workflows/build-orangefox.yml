@@ -102,9 +102,21 @@ jobs:
           set -euxo pipefail
           rm -rf "$FOX_ROOT"
           mkdir -p "$FOX_ROOT"
-          git clone --depth=1 https://github.com/OrangeFox16/sync.git "$RUNNER_TEMP/orangefox-sync"
+          git clone --depth=1 --filter=blob:none --single-branch --branch master https://github.com/OrangeFox16/sync.git "$RUNNER_TEMP/orangefox-sync"
           cd "$RUNNER_TEMP/orangefox-sync"
-          ./orangefox_sync.sh --branch "$FOX_BRANCH" --path "$FOX_ROOT" -- -j"$(nproc --all)" --no-tags --optimized-fetch --prune
+          # The upstream helper does not forward repo-sync arguments, so patch its
+          # sync/clone commands locally for a fast CI-only checkout.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("orangefox_sync.sh")
+          s = p.read_text()
+          s = s.replace("repo sync;", 'repo sync -j"$(nproc --all)" --no-tags --optimized-fetch --prune --current-branch;')
+          s = s.replace("git clone $URL -b $BRANCH recovery;", 'git clone --depth=1 --single-branch --no-tags $URL -b $BRANCH recovery;')
+          s = s.replace("git clone $URL -b "$BRANCH" recovery;", 'git clone --depth=1 --single-branch --no-tags $URL -b "$BRANCH" recovery;')
+          s = s.replace("git clone $URL -b "$BRANCH" recovery;", 'git clone --depth=1 --single-branch --no-tags $URL -b "$BRANCH" recovery;')
+          p.write_text(s)
+          PY
+          ./orangefox_sync.sh --branch "$FOX_BRANCH" --path "$FOX_ROOT"
 
       - name: Update built-in Magisk installer
         shell: bash
