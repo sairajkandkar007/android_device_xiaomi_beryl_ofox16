@@ -265,6 +265,58 @@ jobs:
               done
           fi
 
+          # Scan vendor/system init scripts for the actual KeyMint, Keymaster,
+          # Gatekeeper and TEE services. Do not guess service binary names:
+          # parse the stock .rc "service <name> <binary>" declarations and
+          # copy the referenced executable when it exists.
+          mkdir -p prebuilt/decryption/config/vendor_init prebuilt/decryption/config/system_init
+          : > work/key_service_scan.txt
+
+          while IFS= read -r rc; do
+            case "$rc" in
+              *keymint*.rc|*keymaster*.rc|*gatekeeper*.rc|*tee-supplicant*.rc|*keystore*.rc|*vold*.rc)
+                rel=${rc#work/vendor/etc/init/}
+                mkdir -p "prebuilt/decryption/config/vendor_init/$(dirname "$rel")"
+                cp -a "$rc" "prebuilt/decryption/config/vendor_init/$rel"
+                printf 'VENDOR_RC %s\n' "$rel" >> work/key_service_scan.txt
+                ;;
+            esac
+
+            while read -r service_name service_bin _; do
+              [ -n "$service_name" ] || continue
+              case "$service_bin" in
+                /vendor/*|/system/*|/system_ext/*|/product/*)
+                  src="work$service_bin"
+                  if [ -f "$src" ]; then
+                    root_rel=${service_bin#/}
+                    mkdir -p "prebuilt/decryption/config/service_bins/$(dirname "$root_rel")"
+                    cp -a "$src" "prebuilt/decryption/config/service_bins/$root_rel"
+                    printf 'SERVICE %s %s\n' "$service_name" "$service_bin" >> work/key_service_scan.txt
+                  else
+                    printf 'MISSING_SERVICE_BINARY %s %s\n' "$service_name" "$service_bin" >> work/key_service_scan.txt
+                  fi
+                  ;;
+              esac
+            done < <(awk '$1=="service" && NF>=3 {print $2, $3}' "$rc" 2>/dev/null)
+          done < <(find work/vendor/etc/init -type f -name '*.rc' -print 2>/dev/null)
+
+          if [ -d work/system/etc/init ]; then
+            while IFS= read -r rc; do
+              case "$rc" in
+                *keymint*.rc|*keymaster*.rc|*gatekeeper*.rc|*tee-supplicant*.rc|*keystore*.rc|*vold*.rc)
+                  rel=${rc#work/system/etc/init/}
+                  mkdir -p "prebuilt/decryption/config/system_init/$(dirname "$rel")"
+                  cp -a "$rc" "prebuilt/decryption/config/system_init/$rel"
+                  printf 'SYSTEM_RC %s\n' "$rel" >> work/key_service_scan.txt
+                  ;;
+              esac
+            done < <(find work/system/etc/init -type f -name '*.rc' -print 2>/dev/null)
+          fi
+
+          echo "=== KeyMint/Keymaster/Gatekeeper/TEE service scan ==="
+          cat work/key_service_scan.txt 2>/dev/null || true
+          cp work/key_service_scan.txt prebuilt/decryption/config/key-service-scan.txt
+
           # Search policy for decryption-related domains/rules; retain the stock
           # policy files as evidence rather than modifying policy automatically.
           find work/vendor/etc/selinux -type f \
