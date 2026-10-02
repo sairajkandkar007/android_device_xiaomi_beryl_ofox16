@@ -1,26 +1,25 @@
 # Stock recovery prebuilts
 
-This directory contains exact stock Android 16 Beryl inputs and evidence used by the OrangeFox build.
+This directory contains files intentionally used by or collected for the Beryl OrangeFox 16 recovery build.
 
 ## Layout
 
-- `vendor_boot.img` — stock vendor_boot v4 reference image.
-- `kernel` — stock prebuilt kernel.
-- `dtb.img` / `dtbs/` — stock DTB inputs.
-- `dtbo.img` — stock DTBO image.
-- `modules/` — selected kernel modules required by recovery.
-- `wlan/` — stock WLAN firmware, userspace, init files, libraries and WLAN modules.
-- `decryption/` — stock crypto/FBE evidence and payloads:
-  - `vendor/` — vendor-side KeyMint/Keymaster/Gatekeeper/FBE payloads.
-  - `system/` — system-side crypto/FBE payloads.
-  - `services/init/` — discovered stock service rc files.
-  - `services/bins/` — exact binaries referenced by discovered service declarations.
-  - `services/deps/` — recursively resolved ELF dependencies.
-  - `config/fstab/` — recovery-relevant stock fstab/configuration evidence.
-  - `config/selinux/` — relevant stock SELinux evidence.
-  - `services/key-service-scan.txt` — service discovery report.
-  - `services/key-service-deps.txt` — ELF dependency report.
-- `recovery-modules.list` — authoritative selected recovery module list.
-- `stock-artifacts.txt` — source stock-image metadata.
+- `vendor_boot.img` — stock Android 16 vendor_boot v4 reference.
+- `kernel`, `dtb.img`, `dtbo.img`, `dtbs/` — stock boot inputs.
+- `modules/` — selected recovery kernel modules.
+- `wlan/` — stock Beryl WLAN firmware, userspace, init files and modules.
+- `decryption/` — stock FBE/KeyMint/Gatekeeper recovery material.
+- `recovery-modules.list` — authoritative list of modules copied into the recovery payload.
+- `stock-artifacts.txt` — stock-image provenance/reference information.
 
-The sync workflow regenerates the extracted payload directories from the exact stock release. Device-specific files should not be copied from another device tree.
+## Decryption layout
+
+- `decryption/vendor/` — vendor-side crypto payload.
+- `decryption/system/` — system-side crypto payload.
+- `decryption/config/` — recovery-relevant configuration and init files.
+- `decryption/services/` — exact security service executables discovered from stock init files.
+- `decryption/dependencies/` — ELF dependencies of those discovered security services.
+- `decryption/evidence/` — scan reports; these are evidence, not automatically installed recovery files.
+- `decryption/manifest.txt` — generated inventory.
+
+The sync workflow must keep evidence separate from payload and must not collect unrelated vendor services merely because they appear in stock init files.
