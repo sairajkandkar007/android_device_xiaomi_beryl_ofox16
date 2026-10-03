@@ -1,7 +1,7 @@
 #
 # Copyright (C) 2025-2026 The OrangeFox Recovery Project
 # Device: beryl
-# Target: OrangeFox fox_14.1
+# Target: OrangeFox fox_16.0 / Android 16
 #
 # SPDX-License-Identifier: GPL-3.0-only
 #
@@ -11,10 +11,10 @@ $(call inherit-product, $(SRC_TARGET_DIR)/product/virtual_ab_ota/compression.mk)
 $(call inherit-product, $(SRC_TARGET_DIR)/product/emulated_storage.mk)
 $(call inherit-product, $(SRC_TARGET_DIR)/product/developer_gsi_keys.mk)
 $(call inherit-product, $(SRC_TARGET_DIR)/product/generic_ramdisk.mk)
-PRODUCT_SHIPPING_API_LEVEL := 34
-PRODUCT_TARGET_VNDK_VERSION := 34
-BOARD_SHIPPING_API_LEVEL := 34
-SHIPPING_API_LEVEL := 34
+PRODUCT_SHIPPING_API_LEVEL := 36
+PRODUCT_TARGET_VNDK_VERSION := 36
+BOARD_SHIPPING_API_LEVEL := 36
+SHIPPING_API_LEVEL := 36
 PRODUCT_USE_DYNAMIC_PARTITIONS := true
 PRODUCT_BUILD_SUPER_PARTITION := false
 AB_OTA_UPDATER := true
@@ -70,7 +70,7 @@ TW_INCLUDE_CRYPTO := true
 TW_INCLUDE_CRYPTO_FBE := true
 TW_INCLUDE_FBE_METADATA_DECRYPT := true
 TW_USE_FSCRYPT_POLICY := 2
-PLATFORM_VERSION := 14.0.0
+PLATFORM_VERSION := 16.0.0
 PLATFORM_VERSION_LAST_STABLE := $(PLATFORM_VERSION)
 PLATFORM_SECURITY_PATCH := 2099-12-31
 VENDOR_SECURITY_PATCH := $(PLATFORM_SECURITY_PATCH)
