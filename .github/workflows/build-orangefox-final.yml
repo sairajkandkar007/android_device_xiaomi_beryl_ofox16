@@ -131,23 +131,6 @@ jobs:
           test -f "$FOX_ROOT/$DEVICE_PATH/BoardConfig.mk"
           echo "✓ Device tree added"
 
-      - name: Stage vendor_boot reference
-        working-directory: ${{ env.FOX_ROOT }}
-        shell: bash
-        run: |
-          set -euxo pipefail
-          OUT="out/target/product/beryl"
-          STOCK="$GITHUB_WORKSPACE/prebuilt/vendor_boot.img"
-          test -s "$STOCK"
-          mkdir -p "$OUT"
-          # OFOX16 validates this path inside Fox_After_Recovery_Image.
-          # The vendor_boot is intentionally not rebuilt in CI.
-          # Manual stock-platform + OrangeFox-recovery vendor_boot repacking
-          # will be performed separately after the recovery build.
-          cp -f "$STOCK" "$OUT/vendor_boot.img"
-          test -s "$OUT/vendor_boot.img"
-          echo "✓ Stock vendor_boot staged for OFOX16 packaging hook"
-
       - name: Build recovery (SINGLE JOB - LOW MEMORY MODE)
         timeout-minutes: 180
         working-directory: ${{ env.FOX_ROOT }}
@@ -157,6 +140,9 @@ jobs:
           set +u
           
           export FOX_BUILD_DEVICE=beryl
+          # Build only the OrangeFox recovery ramdisk. Skip the A16 post-recovery vendor hook;
+          # final stock PLATFORM + OrangeFox RECOVERY vendor_boot will be repacked manually.
+          export NOT_ORANGEFOX=1
           source build/envsetup.sh
           lunch "$LUNCH_TARGET"
 
