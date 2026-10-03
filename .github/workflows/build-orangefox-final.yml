@@ -125,6 +125,27 @@ jobs:
           test -f BoardConfig.mk
           test -f AndroidProducts.mk
 
+      - name: Isolate Beryl From Unrelated Xiaomi Device Registrations
+        run: |
+          # OrangeFox fox_16.0 contains unrelated Xiaomi device trees.
+          # Their vendorsetup.sh files are auto-discovered by build/envsetup.sh.
+          # Beryl is MT6855/MediaTek, so Qualcomm SM84xx/Mondrian registrations
+          # must not participate in the Beryl environment.
+          for f in \
+            "${FOX_PATH}/device/xiaomi/mondrian/vendorsetup.sh" \
+            "${FOX_PATH}/device/xiaomi/sm84xx-common/vendorsetup.sh"; do
+            if [ -f "$f" ]; then
+              echo "Disabling unrelated device registration: $f"
+              mv "$f" "$f.disabled"
+            else
+              echo "Not present: $f"
+            fi
+          done
+
+          # Confirm only the Beryl tree is used for the requested target.
+          test -f "${FOX_PATH}/${DEVICE_TREE_PATH}/vendorsetup.sh"
+          echo "Beryl vendorsetup.sh is present."
+
       - name: Verify Android 16 BP2A Configuration
         run: |
           cd "${FOX_PATH}/${DEVICE_TREE_PATH}"
