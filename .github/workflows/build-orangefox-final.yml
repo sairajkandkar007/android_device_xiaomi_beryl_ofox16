@@ -364,13 +364,3 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Cleanup
-        if: always()
-        shell: bash
-        run: |
-          set +e
-          echo "=== Cleanup ==="
-          rm -rf "${{ env.FOX_ROOT }}"
-          sync
-          df -h /
-          echo "✓ Done"
