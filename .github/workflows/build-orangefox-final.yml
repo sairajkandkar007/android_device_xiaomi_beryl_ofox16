@@ -196,7 +196,7 @@ jobs:
 
           [ -f "${OUT}/ramdisk-recovery.img" ] && cp -v "${OUT}/ramdisk-recovery.img" "${GITHUB_WORKSPACE}/artifacts/" || true
           [ -f "${OUT}/vendor_boot.img" ] && cp -v "${OUT}/vendor_boot.img" "${GITHUB_WORKSPACE}/artifacts/" || true
-          [ -f "${OUT}/OrangeFox-"*" .zip" ] && cp -v "${OUT}/OrangeFox-"*" .zip" "${GITHUB_WORKSPACE}/artifacts/" || true
+          [ -f "${OUT}/OrangeFox-"*".zip" ] && cp -v "${OUT}/OrangeFox-"*".zip" "${GITHUB_WORKSPACE}/artifacts/" || true
           cp -v "${GITHUB_WORKSPACE}/build.log" "${GITHUB_WORKSPACE}/artifacts/"
 
           cd "${GITHUB_WORKSPACE}/artifacts"
