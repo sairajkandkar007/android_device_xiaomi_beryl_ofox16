@@ -141,8 +141,9 @@ jobs:
           test -s "$STOCK"
           mkdir -p "$OUT"
           # OFOX16 validates this path inside Fox_After_Recovery_Image.
-          # The final stock-platform/OrangeFox-recovery vendor_boot is rebuilt
-          # by the existing merge step after recovery.img is produced.
+          # The vendor_boot is intentionally not rebuilt in CI.
+          # Manual stock-platform + OrangeFox-recovery vendor_boot repacking
+          # will be performed separately after the recovery build.
           cp -f "$STOCK" "$OUT/vendor_boot.img"
           test -s "$OUT/vendor_boot.img"
           echo "✓ Stock vendor_boot staged for OFOX16 packaging hook"
@@ -206,132 +207,24 @@ jobs:
             exit "$BUILD_STATUS"
           fi
 
-      - name: Merge vendor_boot
-        timeout-minutes: 30
-        if: success()
-        working-directory: ${{ env.FOX_ROOT }}
-        shell: bash
-        run: |
-          set -euxo pipefail
-          echo "=== Merging vendor_boot ==="
-          DEVICE_TREE="$GITHUB_WORKSPACE"
-          OUT="$FOX_ROOT/out/target/product/beryl"
-          WORK="$RUNNER_TEMP/vendorboot-merge"
-          MKBOOTIMG="$RUNNER_TEMP/mkbootimg"
-          
-          BUILT_RAMDISK="$OUT/ramdisk-recovery.img"
-          test -s "$BUILT_RAMDISK"
-          test -s "$DEVICE_TREE/prebuilt/vendor_boot.img"
-          
-          rm -rf "$WORK" "$MKBOOTIMG"
-          mkdir -p "$WORK/built" "$WORK/stock" "$WORK/new" "$WORK/verify"
-          
-          for attempt in 1 2 3 4 5; do
-            if git -c http.version=HTTP/1.1 clone --depth=1 \
-              https://android.googlesource.com/platform/system/tools/mkbootimg "$MKBOOTIMG"; then
-              break
-            fi
-            rm -rf "$MKBOOTIMG"
-            sleep 5
-          done
-          
-          # OFOX16 vendor_boot-as-recovery produces the OrangeFox recovery ramdisk directly.
-          cp -f "$BUILT_RAMDISK" "$WORK/built/ramdisk"
-          test -s "$WORK/built/ramdisk"
-          
-          python3 "$MKBOOTIMG/unpack_bootimg.py" --boot_img "$DEVICE_TREE/prebuilt/vendor_boot.img" --out "$WORK/stock"
-          test -s "$WORK/stock/vendor_ramdisk00"
-          test -s "$WORK/stock/vendor_ramdisk01"
-          test -s "$WORK/stock/dtb"
-          test -s "$WORK/stock/bootconfig"
-          
-          python3 "$DEVICE_TREE/scripts/analyze_vendor_boot.py" \
-            "$DEVICE_TREE/prebuilt/vendor_boot.img" "$WORK/stock-analysis" "$WORK/stock-report"
-          grep -Eq 'ramdisk_fragment\[1\]:.*type=2 name=recovery$' "$WORK/stock-report"
-          
-          cp -f "$WORK/built/ramdisk" "$WORK/stock/vendor_ramdisk01"
-          
-          python3 "$MKBOOTIMG/unpack_bootimg.py" --boot_img "$DEVICE_TREE/prebuilt/vendor_boot.img" \
-            --out "$WORK/stock" --format=mkbootimg -0 > "$WORK/mkbootimg_args"
-          
-          declare -a MKBOOTIMG_ARGS=()
-          while IFS= read -r -d '' ARG; do MKBOOTIMG_ARGS+=("$ARG"); done < "$WORK/mkbootimg_args"
-          
-          found_recovery=0
-          for i in "${!MKBOOTIMG_ARGS[@]}"; do
-            if [ "${MKBOOTIMG_ARGS[$i]}" = "$WORK/stock/vendor_ramdisk01" ]; then 
-              found_recovery=1
-              break
-            fi
-          done
-          test "$found_recovery" = 1
-          
-          python3 "$MKBOOTIMG/mkbootimg.py" "${MKBOOTIMG_ARGS[@]}" --vendor_boot "$WORK/new/vendor_boot.img"
-          test -s "$WORK/new/vendor_boot.img"
-          
-          SIZE=$(stat -c "%s" "$WORK/new/vendor_boot.img")
-          test "$SIZE" -le $((64 * 1024 * 1024))
-          
-          python3 "$MKBOOTIMG/unpack_bootimg.py" --boot_img "$WORK/new/vendor_boot.img" --out "$WORK/verify"
-          test "$(cat "$WORK/verify/header_version")" = "4"
-          
-          cmp "$WORK/stock/vendor_ramdisk00" "$WORK/verify/vendor_ramdisk00"
-          cmp "$WORK/stock/dtb" "$WORK/verify/dtb"
-          cmp "$WORK/stock/bootconfig" "$WORK/verify/bootconfig"
-          [ ! -f "$WORK/stock/kernel" ] || cmp "$WORK/stock/kernel" "$WORK/verify/kernel"
-          cmp "$WORK/built/ramdisk" "$WORK/verify/vendor_ramdisk01"
-          
-          python3 "$DEVICE_TREE/scripts/analyze_vendor_boot.py" \
-            "$WORK/new/vendor_boot.img" "$WORK/final-analysis" "$WORK/final-report"
-          grep -Eq 'ramdisk_fragment\[1\]:.*type=2 name=recovery$' "$WORK/final-report"
-          
-          cp -f "$WORK/new/vendor_boot.img" "$OUT/vendor_boot.img"
-          echo "✓ Merge complete"
-
-      - name: Audit vendor_boot
-        timeout-minutes: 15
-        if: success()
-        working-directory: ${{ env.FOX_ROOT }}
-        shell: bash
-        run: |
-          set -euxo pipefail
-          OUT="$FOX_ROOT/out/target/product/beryl"
-          REPORT="$GITHUB_WORKSPACE/vendor_boot-audit.txt"
-          test -s "$OUT/vendor_boot.img"
-          python3 "$GITHUB_WORKSPACE/scripts/audit_vendor_boot.py" \
-            "$OUT/vendor_boot.img" "$GITHUB_WORKSPACE/prebuilt/vendor_boot.img" "$REPORT"
-          test -s "$REPORT"
-          grep -q '^RESULT=PASS$' "$REPORT"
-          echo "✓ Audit passed"
-
-      - name: Generate checksums
-        if: success()
-        working-directory: ${{ env.FOX_ROOT }}/out/target/product/beryl
-        shell: bash
-        run: |
-          set -euxo pipefail
-          FINAL_IMG="OrangeFox-R12.0_vBaR-Unofficial-beryl.img"
-          cp -f vendor_boot.img "$FINAL_IMG"
-          sha256sum "$FINAL_IMG" vendor_boot.img > "$GITHUB_WORKSPACE/SHA256SUMS"
-          md5sum "$FINAL_IMG" vendor_boot.img > "$GITHUB_WORKSPACE/MD5SUMS"
-          ls -lah
-          echo "=== SHA256 Checksums ==="
-          cat "$GITHUB_WORKSPACE/SHA256SUMS"
-
-      - name: Prepare artifacts
+      - name: Prepare recovery ramdisk
         if: success()
         shell: bash
         run: |
           set -euxo pipefail
+          OUT="${{ env.FOX_ROOT }}/out/target/product/beryl"
           ARTIFACT_DIR="${{ github.workspace }}/artifacts"
+          test -s "$OUT/ramdisk-recovery.img"
           mkdir -p "$ARTIFACT_DIR"
-          cp "${{ env.FOX_ROOT }}/out/target/product/beryl/OrangeFox-R12.0_vBaR-Unofficial-beryl.img" "$ARTIFACT_DIR/"
-          cp "${{ env.FOX_ROOT }}/out/target/product/beryl/vendor_boot.img" "$ARTIFACT_DIR/"
-          cp "${{ github.workspace }}/SHA256SUMS" "$ARTIFACT_DIR/"
-          cp "${{ github.workspace }}/MD5SUMS" "$ARTIFACT_DIR/"
-          echo "Artifacts ready:"
+          cp -f "$OUT/ramdisk-recovery.img" "$ARTIFACT_DIR/OrangeFox-R12.0_vBaR-Recovery-Ramdisk-beryl.img"
+          cp -f "$GITHUB_WORKSPACE/prebuilt/vendor_boot.img" "$ARTIFACT_DIR/stock-vendor_boot.img"
+          sha256sum \
+            "$ARTIFACT_DIR/OrangeFox-R12.0_vBaR-Recovery-Ramdisk-beryl.img" \
+            "$ARTIFACT_DIR/stock-vendor_boot.img" > "$GITHUB_WORKSPACE/SHA256SUMS"
+          cp -f "$GITHUB_WORKSPACE/SHA256SUMS" "$ARTIFACT_DIR/"
+          echo "=== Recovery artifacts ==="
           ls -lah "$ARTIFACT_DIR/"
-          du -sh "$ARTIFACT_DIR/"
+          cat "$GITHUB_WORKSPACE/SHA256SUMS"
 
       - name: Show summary
         if: always()
