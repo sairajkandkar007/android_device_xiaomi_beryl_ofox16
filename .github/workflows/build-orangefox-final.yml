@@ -131,6 +131,24 @@ jobs:
           test -f "$FOX_ROOT/$DEVICE_PATH/BoardConfig.mk"
           echo "✓ Device tree added"
 
+      - name: Patch OrangeFox A16 vendor hook for Android 16 prop.default
+        working-directory: ${{ env.FOX_ROOT }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          HOOK="$FOX_ROOT/vendor/recovery/OrangeFox_A16.sh"
+          test -f "$HOOK"
+          echo "=== OrangeFox A16 property-path compatibility ==="
+          grep -nE 'DEFAULT_PROP|/ramdisk/(default\\.prop|prop\\.default)' "$HOOK" || true
+          # Android 16 recovery uses prop.default; the A16 vendor hook was still
+          # looking for the legacy AIK ramdisk/default.prop path.
+          sed -i -E 's#/ramdisk/default\\.prop#/ramdisk/prop.default#g' "$HOOK"
+          if grep -qE '/ramdisk/default\\.prop' "$HOOK"; then
+            echo "ERROR: legacy default.prop path remains in OrangeFox_A16.sh"
+            exit 1
+          fi
+          echo "=== Patched property paths ==="
+          grep -nE 'DEFAULT_PROP|/ramdisk/prop\\.default' "$HOOK" || true
       - name: Build recovery (SINGLE JOB - LOW MEMORY MODE)
         timeout-minutes: 180
         working-directory: ${{ env.FOX_ROOT }}
@@ -140,9 +158,8 @@ jobs:
           set +u
           
           export FOX_BUILD_DEVICE=beryl
-          # Build only the OrangeFox recovery ramdisk. Skip the A16 post-recovery vendor hook;
-          # final stock PLATFORM + OrangeFox RECOVERY vendor_boot will be repacked manually.
-          export NOT_ORANGEFOX=1
+          # Build the OrangeFox vendor_boot recovery ramdisk through the A16 hook.
+          # The final stock PLATFORM + OrangeFox RECOVERY vendor_boot is still repacked manually.
           source build/envsetup.sh
           lunch "$LUNCH_TARGET"
 
