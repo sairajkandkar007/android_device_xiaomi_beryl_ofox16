@@ -11,7 +11,7 @@ PRODUCT_MAKEFILES := \
     $(LOCAL_DIR)/fox_beryl.mk
 
 COMMON_LUNCH_CHOICES := \
-    twrp_beryl-bp2a-eng \
+    twrp_beryl-ap2a-eng \
     twrp_beryl-eng \
-    fox_beryl-bp2a-eng \
+    fox_beryl-ap2a-eng \
     fox_beryl-eng
