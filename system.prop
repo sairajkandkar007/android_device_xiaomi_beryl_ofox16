@@ -1,0 +1,7 @@
+# System properties for recovery
+ro.hardware=mt6855
+ro.boot.hardware=mt6855
+ro.chipname=mt6855
+ro.mtk_key_manager_support=1
+ro.crypto.volume.filenames_mode=aes-256-cts
+ro.crypto.allows_encrypt_override=true
