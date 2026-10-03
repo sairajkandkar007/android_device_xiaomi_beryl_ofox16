@@ -1,0 +1,250 @@
+name: Build OrangeFox Recovery
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FOX_BRANCH: "fox_16.0"
+  FOX_ROOT: ${{ github.workspace }}/orangefox_16
+  DEVICE_PATH: device/xiaomi/beryl
+  LUNCH_TARGET: fox_beryl-bp2a-eng
+  BUILD_JOBS: "2"
+  REPO_JOBS: "16"
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
+  CCACHE_SIZE: "50G"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - name: Checkout device tree
+        uses: actions/checkout@v5
+        with:
+          lfs: true
+          fetch-depth: 1
+
+      - name: Clean workspace (slimhub method)
+        uses: rokibhasansagar/slimhub_actions@main
+
+      - name: Set up maximum swap space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 32
+
+      - name: Verify environment
+        shell: bash
+        run: |
+          echo "=== Build Environment ==="
+          df -h /
+          free -h
+          sudo swapon --show
+          echo "CPU cores: $(nproc --all)"
+          echo "Build jobs: $BUILD_JOBS"
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            aria2 bc bison build-essential ccache flex gperf \
+            lib32ncurses-dev lib32readline-dev lib32z1-dev lz4 \
+            libncurses-dev libssl-dev libxml2-utils rsync \
+            schedtool unzip zip zlib1g-dev util-linux
+          echo "✓ Dependencies installed"
+
+      - name: Sync OrangeFox 16.0
+        timeout-minutes: 120
+        shell: bash
+        run: |
+          set -euxo pipefail
+          echo "=== Syncing OrangeFox Source ==="
+          if ! command -v repo >/dev/null 2>&1; then
+            curl -fL --retry 5 --retry-delay 3 -o "$RUNNER_TEMP/repo" https://storage.googleapis.com/git-repo-downloads/repo
+            chmod +x "$RUNNER_TEMP/repo"
+            export PATH="$RUNNER_TEMP:$PATH"
+          fi
+          mkdir -p "$FOX_ROOT"
+          cd "$FOX_ROOT"
+          repo init -u https://gitlab.com/OrangeFox/Manifest.git -b "$FOX_BRANCH" --depth=1
+          # OrangeFox/AOSP-style shallow sync: parallel projects + force-sync.
+          # The manifest is already initialized with --depth=1 above.
+          repo sync --current-branch --no-tags --optimized-fetch --prune \
+            --force-sync -j"$(nproc --all)"
+          echo "✓ Sync complete"
+          du -sh "$FOX_ROOT"
+
+      - name: Restore ccache
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: orangefox-ccache-${{ env.FOX_BRANCH }}-${{ runner.os }}-${{ hashFiles('device/xiaomi/beryl/BoardConfig.mk', 'device/xiaomi/beryl/fox_beryl.mk', 'device/xiaomi/beryl/vendorsetup.sh') }}
+          restore-keys: |
+            orangefox-ccache-${{ env.FOX_BRANCH }}-${{ runner.os }}-
+
+      - name: Configure ccache
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p "$CCACHE_DIR"
+          ccache --set-config=cache_dir="$CCACHE_DIR"
+          ccache -M "$CCACHE_SIZE"
+          ccache --set-config=compression=true
+          ccache --zero-stats
+          echo "USE_CCACHE=1" >> "$GITHUB_ENV"
+          echo "CCACHE_DIR=$CCACHE_DIR" >> "$GITHUB_ENV"
+          echo "CCACHE_EXEC=$(command -v ccache)" >> "$GITHUB_ENV"
+          ccache -p
+          ccache -s
+
+      - name: Setup Magisk
+        shell: bash
+        run: |
+          set -euxo pipefail
+          MAGISK_VERSION="30.7"
+          MAGISK_DIR="$FOX_ROOT/prebuilts/magisk"
+          MAGISK_ZIP="$MAGISK_DIR/Magisk-v${MAGISK_VERSION}.zip"
+          mkdir -p "$MAGISK_DIR"
+          curl -fL --retry 5 --retry-delay 3 -o "$MAGISK_ZIP" \
+            "https://github.com/topjohnwu/Magisk/releases/download/v${MAGISK_VERSION}/Magisk-v${MAGISK_VERSION}.apk"
+          unzip -tq "$MAGISK_ZIP" >/dev/null
+          echo "FOX_USE_SPECIFIC_MAGISK_ZIP=$MAGISK_ZIP" >> "$GITHUB_ENV"
+          echo "✓ Magisk ready"
+
+      - name: Add device tree
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p "$FOX_ROOT/$DEVICE_PATH"
+          rsync -a --exclude='.git/' --exclude='.github/' --exclude='orangefox_16/' \
+            "$GITHUB_WORKSPACE/" "$FOX_ROOT/$DEVICE_PATH/"
+          test -f "$FOX_ROOT/$DEVICE_PATH/AndroidProducts.mk"
+          test -f "$FOX_ROOT/$DEVICE_PATH/fox_beryl.mk"
+          test -f "$FOX_ROOT/$DEVICE_PATH/BoardConfig.mk"
+          echo "✓ Device tree added"
+
+      - name: Build recovery (SINGLE JOB - LOW MEMORY MODE)
+        timeout-minutes: 180
+        working-directory: ${{ env.FOX_ROOT }}
+        shell: bash
+        run: |
+          set -eo pipefail
+          set +u
+          
+          export FOX_BUILD_DEVICE=beryl
+          # Build the OrangeFox vendor_boot recovery ramdisk through the A16 hook.
+          # The final stock PLATFORM + OrangeFox RECOVERY vendor_boot is still repacked manually.
+          source build/envsetup.sh
+          lunch "$LUNCH_TARGET"
+
+          test "$TARGET_PRODUCT" = "fox_beryl"
+          test "$TARGET_BUILD_VARIANT" = "eng"
+          
+          export FOX_USE_SPECIFIC_MAGISK_ZIP="${{ env.FOX_USE_SPECIFIC_MAGISK_ZIP }}"
+
+          # Skip the OrangeFox post-recovery vendor hook. OFOX16 builds the
+          # recovery ramdisk here; final vendor_boot is repacked manually.
+          export NOT_ORANGEFOX=1
+          
+          # Memory optimization flags
+          export NINJA_STATUS="[%f/%t] %es"
+          export BUILD_JOBS="$BUILD_JOBS"
+          
+          echo "=== Starting Build ==="
+          echo "Started: $(date -u)"
+          echo "Build jobs: $BUILD_JOBS"
+          echo "ccache: $(ccache --version | head -n1)"
+          ccache -s
+          free -h
+          df -h /
+          
+          set +e
+          : > "$GITHUB_WORKSPACE/build.log"
+          BUILD_STATUS=1
+
+          echo "=== Attempt 1: mka recoveryimage ===" | tee -a "$GITHUB_WORKSPACE/build.log"
+          if command -v mka >/dev/null 2>&1; then
+            mka recoveryimage -j"$BUILD_JOBS" 2>&1 | tee -a "$GITHUB_WORKSPACE/build.log"
+            BUILD_STATUS=${PIPESTATUS[0]}
+          else
+            echo "mka is not available; skipping mka attempt" | tee -a "$GITHUB_WORKSPACE/build.log"
+          fi
+
+          if [ "$BUILD_STATUS" -ne 0 ]; then
+            echo "=== mka failed; continuing with m recoveryimage ===" | tee -a "$GITHUB_WORKSPACE/build.log"
+            m recoveryimage -j"$BUILD_JOBS" 2>&1 | tee -a "$GITHUB_WORKSPACE/build.log"
+            BUILD_STATUS=${PIPESTATUS[0]}
+          fi
+          set -e
+
+          echo "=== Final Build Status: $BUILD_STATUS ==="
+          if [ "$BUILD_STATUS" -eq 0 ]; then
+            echo "✓ Recovery build successful"
+          else
+            echo "✗ Both mka and m recoveryimage failed"
+            echo "=== Memory at final failure ==="
+            free -h
+            df -h /
+            exit "$BUILD_STATUS"
+          fi
+
+      - name: Prepare recovery ramdisk
+        if: success()
+        shell: bash
+        run: |
+          set -euxo pipefail
+          OUT="${{ env.FOX_ROOT }}/out/target/product/beryl"
+          ARTIFACT_DIR="${{ github.workspace }}/artifacts"
+          test -s "$OUT/ramdisk-recovery.img"
+          mkdir -p "$ARTIFACT_DIR"
+          cp -f "$OUT/ramdisk-recovery.img" "$ARTIFACT_DIR/OrangeFox-R12.0_vBaR-Recovery-Ramdisk-beryl.img"
+          cp -f "$GITHUB_WORKSPACE/prebuilt/vendor_boot.img" "$ARTIFACT_DIR/stock-vendor_boot.img"
+          sha256sum \
+            "$ARTIFACT_DIR/OrangeFox-R12.0_vBaR-Recovery-Ramdisk-beryl.img" \
+            "$ARTIFACT_DIR/stock-vendor_boot.img" > "$GITHUB_WORKSPACE/SHA256SUMS"
+          cp -f "$GITHUB_WORKSPACE/SHA256SUMS" "$ARTIFACT_DIR/"
+          echo "=== Recovery artifacts ==="
+          ls -lah "$ARTIFACT_DIR/"
+          cat "$GITHUB_WORKSPACE/SHA256SUMS"
+
+      - name: Show summary
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          echo "=== Build Summary ==="
+          df -h /
+          free -h
+          echo "=== Build log (last 200 lines) ==="
+          tail -n 200 "${{ github.workspace }}/build.log" 2>/dev/null || echo "No log"
+
+      - name: Upload logs
+        if: always()
+        timeout-minutes: 10
+        uses: actions/upload-artifact@v4
+        with:
+          name: orangefox-beryl-logs
+          path: |
+            ${{ github.workspace }}/build.log
+            ${{ github.workspace }}/vendor_boot-audit.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload images
+        if: success()
+        timeout-minutes: 30
+        uses: actions/upload-artifact@v4
+        with:
+          name: orangefox-beryl-images
+          path: ${{ github.workspace }}/artifacts/
+          if-no-files-found: error
+          retention-days: 30
+
