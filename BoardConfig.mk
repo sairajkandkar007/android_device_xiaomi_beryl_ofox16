@@ -2,7 +2,7 @@
 # Copyright (C) 2025-2026 The OrangeFox Recovery Project
 # Device: POCO M7 Pro 5G / Redmi Note 14 5G (beryl)
 # SoC: MediaTek Dimensity 7025 Ultra (MT6855)
-# Target: OrangeFox fox_14.1 + HyperOS 3 decryption
+# Target: OrangeFox fox_16.0 / Android 16 / HyperOS 3 decryption
 #
 # Based on balarama007 tree + stock HyperOS 3 analysis
 # SPDX-License-Identifier: Apache-2.0
@@ -63,8 +63,7 @@ BOARD_EXCLUDE_KERNEL_FROM_RECOVERY_IMAGE := true
 BOARD_USES_GENERIC_KERNEL_IMAGE := true
 BOARD_MOVE_GSI_AVB_KEYS_TO_VENDOR_BOOT := true
 
-# TEMPORARY for bring-up only – remove for final builds
-BOARD_BOOTCONFIG += androidboot.selinux=permissive
+# Stock Beryl vendor boot command line
 VENDOR_CMDLINE := bootopt=64S3,32N2,64N2
 BOARD_MKBOOTIMG_ARGS += --vendor_cmdline "$(VENDOR_CMDLINE)"
 
