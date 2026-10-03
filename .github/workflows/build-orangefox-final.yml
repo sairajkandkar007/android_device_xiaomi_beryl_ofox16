@@ -215,7 +215,7 @@ jobs:
           set -euxo pipefail
           echo "=== Merging vendor_boot ==="
           DEVICE_TREE="$GITHUB_WORKSPACE"
-          OUT="out/target/product/beryl"
+          OUT="$FOX_ROOT/out/target/product/beryl"
           WORK="$RUNNER_TEMP/vendorboot-merge"
           MKBOOTIMG="$RUNNER_TEMP/mkbootimg"
           
@@ -295,7 +295,7 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          OUT="out/target/product/beryl"
+          OUT="$FOX_ROOT/out/target/product/beryl"
           REPORT="$GITHUB_WORKSPACE/vendor_boot-audit.txt"
           test -s "$OUT/vendor_boot.img"
           python3 "$GITHUB_WORKSPACE/scripts/audit_vendor_boot.py" \
@@ -310,8 +310,10 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          sha256sum recovery.img vendor_boot.img > "$GITHUB_WORKSPACE/SHA256SUMS"
-          md5sum recovery.img vendor_boot.img > "$GITHUB_WORKSPACE/MD5SUMS"
+          FINAL_IMG="OrangeFox-R12.0_vBaR-Unofficial-beryl.img"
+          cp -f vendor_boot.img "$FINAL_IMG"
+          sha256sum "$FINAL_IMG" vendor_boot.img > "$GITHUB_WORKSPACE/SHA256SUMS"
+          md5sum "$FINAL_IMG" vendor_boot.img > "$GITHUB_WORKSPACE/MD5SUMS"
           ls -lah
           echo "=== SHA256 Checksums ==="
           cat "$GITHUB_WORKSPACE/SHA256SUMS"
@@ -323,7 +325,7 @@ jobs:
           set -euxo pipefail
           ARTIFACT_DIR="${{ github.workspace }}/artifacts"
           mkdir -p "$ARTIFACT_DIR"
-          cp "${{ env.FOX_ROOT }}/out/target/product/beryl/recovery.img" "$ARTIFACT_DIR/"
+          cp "${{ env.FOX_ROOT }}/out/target/product/beryl/OrangeFox-R12.0_vBaR-Unofficial-beryl.img" "$ARTIFACT_DIR/"
           cp "${{ env.FOX_ROOT }}/out/target/product/beryl/vendor_boot.img" "$ARTIFACT_DIR/"
           cp "${{ github.workspace }}/SHA256SUMS" "$ARTIFACT_DIR/"
           cp "${{ github.workspace }}/MD5SUMS" "$ARTIFACT_DIR/"
