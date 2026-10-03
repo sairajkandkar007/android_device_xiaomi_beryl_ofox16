@@ -1,7 +1,7 @@
 #
 # Copyright (C) 2025-2026 The OrangeFox Recovery Project
 # Device: beryl
-# Target: OrangeFox fox_14.1 (bp2a)
+# Target: OrangeFox fox_16.0 (Android 16 / BP2A)
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
@@ -10,7 +10,7 @@ $(call inherit-product, device/xiaomi/beryl/twrp_beryl.mk)
 
 PRODUCT_NAME := fox_beryl
 
-OF_MAINTAINER := beryl-ofox14
+OF_MAINTAINER := beryl-ofox16
 OF_SCREEN_H := 2400
 OF_STATUS_H := 100
 OF_STATUS_INDENT_LEFT := 48

@@ -18,7 +18,15 @@ if [ "$1" = "$FDEVICE" -o "$FOX_BUILD_DEVICE" = "$FDEVICE" ]; then
 export LC_ALL="C"
 export ALLOW_MISSING_DEPENDENCIES=true
 export FOX_USE_TWRP_RECOVERY_IMAGE_BUILDER=1
-export OF_MAINTAINER="beryl-ofox14"
+export FOX_VARIANT="vBaR"
+export FOX_ADD_API_V36_PREBUILTS=2
+export OF_DEFAULT_KEYMASTER_VERSION=4.0
+export OF_FORCE_PREBUILT_KERNEL=1
+export OF_USE_DMCTL=1
+export OF_LOAD_DEFAULT_LANGUAGE_BEFORE_DECRYPT=1
+export OF_SKIP_POST_DECRYPT_THEME_RELOAD=1
+export FOX_REFERENCE_VENDOR_BOOT_IMAGE="$(gettop)/device/xiaomi/beryl/prebuilt/vendor_boot.img"
+export OF_MAINTAINER="beryl-ofox16"
 export BUILD_USERNAME=beryl
 export BUILD_HOSTNAME=ofox
 export FOX_TARGET_DEVICES="beryl,citrine"
