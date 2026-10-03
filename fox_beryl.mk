@@ -1,0 +1,38 @@
+#
+# Copyright (C) 2025-2026 The OrangeFox Recovery Project
+# Device: beryl
+# Target: OrangeFox fox_14.1
+#
+# SPDX-License-Identifier: GPL-3.0-only
+#
+$(call inherit-product, vendor/recovery/config/common.mk)
+$(call inherit-product, device/xiaomi/beryl/device.mk)
+PRODUCT_NAME := fox_beryl
+PRODUCT_DEVICE := beryl
+PRODUCT_BRAND := Xiaomi
+PRODUCT_MODEL := POCO M7 Pro 5G
+PRODUCT_MANUFACTURER := Xiaomi
+OF_MAINTAINER := beryl-ofox14
+OF_SCREEN_H := 2400
+OF_STATUS_H := 100
+OF_STATUS_INDENT_LEFT := 48
+OF_STATUS_INDENT_RIGHT := 48
+OF_CLOCK_POS := 1
+OF_ALLOW_DISABLE_NAVBAR := 0
+OF_OPTIONS_LIST_NUM := 9
+OF_QUICK_BACKUP_LIST := /boot;/init_boot;/vendor_boot;
+OF_FL_PATH1 := /sys/class/leds/flashlight/brightness
+OF_USE_GREEN_LED := 0
+OF_NO_TREBLE_COMPATIBILITY_CHECK := 1
+OF_ENABLE_ALL_PARTITION_TOOLS := 1
+OF_SPLASH_MAX_SIZE := 2048
+OF_LOOP_DEVICE_ERRORS_TO_LOG := 1
+OF_USE_LEGACY_TIME_FIXUP := 1
+OF_WIPE_METADATA_AFTER_DATAFORMAT := 1
+OF_UNBIND_SDCARD_F2FS := 1
+OF_FORCE_DATA_FORMAT_F2FS := 1
+OF_FORCE_CASEFOLDING := 1
+OF_ENABLE_FRP_ADDON := 1
+OF_USE_LZ4_COMPRESSION := 1
+OF_USE_DMCTL := 1
+OF_ADVANCED_SECURITY := 0
