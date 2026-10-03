@@ -1,0 +1,27 @@
+# Stock-derived fstab for beryl (POCO M7 Pro 5G / Redmi Note 14 5G)
+system /system erofs ro wait,slotselect,avb=vbmeta_system,logical,first_stage_mount
+system_ext /system_ext erofs ro wait,slotselect,avb=vbmeta_system,logical,first_stage_mount
+vendor /vendor erofs ro wait,slotselect,avb,logical,first_stage_mount
+product /product erofs ro wait,slotselect,avb,logical,first_stage_mount
+odm /odm erofs ro wait,slotselect,avb,logical,first_stage_mount
+vendor_dlkm /vendor_dlkm erofs ro wait,slotselect,avb,logical,first_stage_mount
+odm_dlkm /odm_dlkm erofs ro wait,slotselect,avb,logical,first_stage_mount
+system_dlkm /system_dlkm erofs ro wait,slotselect,avb,logical,first_stage_mount
+/dev/block/by-name/metadata /metadata ext4 noatime,nosuid,nodev,discard wait,check,formattable,first_stage_mount
+/dev/block/by-name/userdata /data f2fs noatime,nosuid,nodev,discard,reserve_root=134217,resgid=1065,fsync_mode=nobarrier,inlinecrypt latemount,wait,check,formattable,fileencryption=aes-256-xts:aes-256-cts:v2+inlinecrypt_optimized,keydirectory=/metadata/vold/metadata_encryption,quota,reservedsize=128M,checkpoint=fs,fsverity
+/dev/block/by-name/boot /boot emmc defaults defaults
+/dev/block/by-name/init_boot /init_boot emmc defaults defaults
+/dev/block/by-name/vendor_boot /vendor_boot emmc defaults defaults
+/dev/block/by-name/dtbo /dtbo emmc defaults defaults
+/dev/block/by-name/vbmeta /vbmeta emmc defaults defaults
+/dev/block/by-name/vbmeta_system /vbmeta_system emmc defaults defaults
+/dev/block/by-name/misc /misc emmc defaults defaults
+/dev/block/by-name/frp /persistent emmc defaults defaults
+/dev/block/by-name/nvram /nvram emmc defaults defaults
+/dev/block/by-name/persist /persist ext4 noatime,nosuid,nodev,barrier=1 wait,check
+/dev/block/by-name/protect1 /protect1 ext4 noatime,nosuid,nodev,barrier=1 wait,check
+/dev/block/by-name/protect2 /protect2 ext4 noatime,nosuid,nodev,barrier=1 wait,check
+/dev/block/by-name/nvcfg /nvcfg ext4 noatime,nosuid,nodev,barrier=1 wait,check
+/dev/block/by-name/rescue /cache ext4 noatime,nosuid,nodev,discard wait,check,formattable
+/devices/platform/soc/11240000.mmc* auto auto defaults voldmanaged=sdcard1:auto
+/devices/platform/soc/mt_usb* auto vfat defaults voldmanaged=usbotg:auto
