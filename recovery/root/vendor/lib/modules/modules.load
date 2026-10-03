@@ -11,10 +11,13 @@ emi-mpu
 emi-mpu-hook-v1
 emi-mpu-v2
 ffa_v11
+fts_touch_i2c
+gz_virtio_mod
 i2c-mt65xx
 iommu_debug
 iommu_secure
 irq-dbg
+lct_tp
 log_store
 mcDrvModule
 miev
@@ -34,10 +37,12 @@ mtk-scpsys
 mtk-scpsys-mt6855
 mtk-smi
 mtk-smi-dbg
+mtk-u_ether
 mtk-uart-apdma
 mtk_iommu
 mtk_iommu_util
 mtk_printk_ctrl
+mtk_usb_f_rndis
 mtk_wdt
 nvmem-mt635x-efuse
 nvmem_mtk-devinfo
@@ -50,8 +55,10 @@ rpmb
 rpmb-mtk
 sec-rng
 spi-mt65xx
+syscon-reboot-mode
 system_heap
 teeperf
 timer-mediatek
 ufs-mediatek-dbg
 ufs-mediatek-mod
+xiaomi_tp

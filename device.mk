@@ -19,7 +19,19 @@ PRODUCT_USE_DYNAMIC_PARTITIONS := true
 PRODUCT_BUILD_SUPER_PARTITION := false
 AB_OTA_UPDATER := true
 AB_OTA_PARTITIONS += \
-    boot dtbo init_boot odm product system system_dlkm system_ext vbmeta vbmeta_system vendor vendor_boot vendor_dlkm
+    boot \
+    dtbo \
+    init_boot \
+    odm \
+    product \
+    system \
+    system_dlkm \
+    system_ext \
+    vbmeta \
+    vbmeta_system \
+    vendor \
+    vendor_boot \
+    vendor_dlkm
 PRODUCT_PACKAGES += \
     android.hardware.fastboot@1.1-impl-mock fastbootd \
     update_engine update_engine_sideload update_verifier checkpoint_gc otapreopt_script
@@ -27,6 +39,16 @@ PRODUCT_SOONG_NAMESPACES += $(DEVICE_PATH)
 PRODUCT_PACKAGES += linker.vendor_ramdisk e2fsck.vendor_ramdisk resize2fs.vendor_ramdisk fsck.vendor_ramdisk tune2fs.vendor_ramdisk
 PRODUCT_COPY_FILES += \
     $(DEVICE_PATH)/recovery/root/first_stage_ramdisk/fstab.mt6855:$(TARGET_COPY_OUT_VENDOR_RAMDISK)/first_stage_ramdisk/fstab.mt6855
+
+# Decryption payload (KeyMint mitee + Gatekeeper + keystore2 + vold)
+ifneq ($(wildcard $(DEVICE_PATH)/prebuilt/decryption/vendor),)
+PRODUCT_COPY_FILES += \
+    $(call find-copy-subdir-files,*,$(DEVICE_PATH)/prebuilt/decryption/vendor,$(TARGET_COPY_OUT_RECOVERY)/root/vendor)
+
+PRODUCT_COPY_FILES += \
+    $(call find-copy-subdir-files,*,$(DEVICE_PATH)/prebuilt/decryption/system/system,$(TARGET_COPY_OUT_RECOVERY)/root/system)
+endif
+
 TW_THEME := portrait_hdpi
 TW_DEFAULT_LANGUAGE := en
 TW_USE_TOOLBOX := true
@@ -54,5 +76,5 @@ PLATFORM_SECURITY_PATCH := 2099-12-31
 VENDOR_SECURITY_PATCH := $(PLATFORM_SECURITY_PATCH)
 BOOT_SECURITY_PATCH := $(PLATFORM_SECURITY_PATCH)
 TW_LOAD_VENDOR_BOOT_MODULES := true
-TW_LOAD_VENDOR_MODULES := "ufs-mediatek-mod.ko phy-mtk-ufs.ko mtk-mmc.ko cqhci.ko blocktag.ko mitee.ko teeperf.ko mcDrvModule.ko mtk_iommu.ko system_heap.ko pinctrl-mtk-v2.ko pinctrl-mt6855.ko"
+TW_LOAD_VENDOR_MODULES := "ufs-mediatek-mod.ko phy-mtk-ufs.ko mtk-mmc.ko cqhci.ko blocktag.ko mitee.ko teeperf.ko mcDrvModule.ko mtk_iommu.ko system_heap.ko pinctrl-mtk-v2.ko pinctrl-mt6855.ko fts_touch_i2c.ko xiaomi_tp.ko lct_tp.ko"
 TW_LOAD_VENDOR_MODULES_EXCLUDE_GKI := true

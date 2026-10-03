@@ -28,7 +28,11 @@ TARGET_NO_BOOTLOADER := true
 TARGET_OTA_ASSERT_DEVICE := beryl,citrine
 
 BOARD_KERNEL_IMAGE_NAME := Image
+ifeq ($(wildcard $(DEVICE_PATH)/prebuilt/Image),)
+TARGET_PREBUILT_KERNEL := $(DEVICE_PATH)/prebuilt/kernel
+else
 TARGET_PREBUILT_KERNEL := $(DEVICE_PATH)/prebuilt/Image
+endif
 BOARD_PREBUILT_DTBIMAGE := $(DEVICE_PATH)/prebuilt/dtb.img
 BOARD_INCLUDE_DTB_IN_BOOTIMG := true
 TARGET_KERNEL_ARCH := arm64
@@ -59,6 +63,7 @@ BOARD_EXCLUDE_KERNEL_FROM_RECOVERY_IMAGE := true
 BOARD_USES_GENERIC_KERNEL_IMAGE := true
 BOARD_MOVE_GSI_AVB_KEYS_TO_VENDOR_BOOT := true
 
+# TEMPORARY for bring-up only – remove for final builds
 BOARD_BOOTCONFIG += androidboot.selinux=permissive
 VENDOR_CMDLINE := bootopt=64S3,32N2,64N2
 BOARD_MKBOOTIMG_ARGS += --vendor_cmdline "$(VENDOR_CMDLINE)"

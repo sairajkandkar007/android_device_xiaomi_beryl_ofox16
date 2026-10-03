@@ -60,6 +60,17 @@ on init
     insmod /vendor/lib/modules/mtk-kpd.ko
     insmod /vendor/lib/modules/regulator-vibrator.ko
 
+    # Touch (recovery UI)
+    insmod /vendor/lib/modules/fts_touch_i2c.ko
+    insmod /vendor/lib/modules/lct_tp.ko
+    insmod /vendor/lib/modules/xiaomi_tp.ko
+
+    # USB gadget helpers
+    insmod /vendor/lib/modules/gz_virtio_mod.ko
+    insmod /vendor/lib/modules/syscon-reboot-mode.ko
+    insmod /vendor/lib/modules/mtk_u_ether.ko
+    insmod /vendor/lib/modules/mtk_usb_f_rndis.ko
+
 on fs
     wait /dev/block/bootdevice/by-name/userdata
     wait /dev/block/bootdevice/by-name/metadata
