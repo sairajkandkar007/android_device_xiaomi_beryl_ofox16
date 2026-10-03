@@ -1,0 +1,70 @@
+on early-init
+    mkdir /vendor/lib/modules 0755
+
+on init
+    insmod /vendor/lib/modules/aee_aed.ko
+    insmod /vendor/lib/modules/aee_hangdet.ko
+    insmod /vendor/lib/modules/aee_rs.ko
+    insmod /vendor/lib/modules/irq-dbg.ko
+    insmod /vendor/lib/modules/mrdump.ko
+    insmod /vendor/lib/modules/log_store.ko
+    insmod /vendor/lib/modules/mtk_printk_ctrl.ko
+    insmod /vendor/lib/modules/monitor_hang.ko
+    insmod /vendor/lib/modules/mtk_wdt.ko
+    insmod /vendor/lib/modules/timer-mediatek.ko
+    insmod /vendor/lib/modules/nvmem_mtk-devinfo.ko
+    insmod /vendor/lib/modules/nvmem-mt635x-efuse.ko
+    insmod /vendor/lib/modules/pinctrl-mtk-v2.ko
+    insmod /vendor/lib/modules/pinctrl-mtk-common-v2_debug.ko
+    insmod /vendor/lib/modules/pinctrl-mt6855.ko
+    insmod /vendor/lib/modules/clk-common.ko
+    insmod /vendor/lib/modules/clk-mt6855.ko
+    insmod /vendor/lib/modules/mtk-scpsys.ko
+    insmod /vendor/lib/modules/mtk-scpsys-mt6855.ko
+    insmod /vendor/lib/modules/mtk-dvfsrc.ko
+    insmod /vendor/lib/modules/mtk-dvfsrc-regulator.ko
+    insmod /vendor/lib/modules/mtk-emi.ko
+    insmod /vendor/lib/modules/emi-mpu.ko
+    insmod /vendor/lib/modules/emi-mpu-v2.ko
+    insmod /vendor/lib/modules/emi-mpu-hook-v1.ko
+    insmod /vendor/lib/modules/emi.ko
+    insmod /vendor/lib/modules/mtk-mminfra-util.ko
+    insmod /vendor/lib/modules/mtk-smi.ko
+    insmod /vendor/lib/modules/mtk-smi-dbg.ko
+    insmod /vendor/lib/modules/mtk-icc-core.ko
+    insmod /vendor/lib/modules/mtk_iommu_util.ko
+    insmod /vendor/lib/modules/iommu_secure.ko
+    insmod /vendor/lib/modules/iommu_debug.ko
+    insmod /vendor/lib/modules/mtk_iommu.ko
+    insmod /vendor/lib/modules/system_heap.ko
+    insmod /vendor/lib/modules/mtk-uart-apdma.ko
+    insmod /vendor/lib/modules/8250_mtk.ko
+    insmod /vendor/lib/modules/i2c-mt65xx.ko
+    insmod /vendor/lib/modules/spi-mt65xx.ko
+    insmod /vendor/lib/modules/phy-mtk-ufs.ko
+    insmod /vendor/lib/modules/blocktag.ko
+    insmod /vendor/lib/modules/rpmb.ko
+    insmod /vendor/lib/modules/cqhci.ko
+    insmod /vendor/lib/modules/mtk-mmc-dbg.ko
+    insmod /vendor/lib/modules/mtk-mmc.ko
+    insmod /vendor/lib/modules/ufs-mediatek-dbg.ko
+    insmod /vendor/lib/modules/ufs-mediatek-mod.ko
+    insmod /vendor/lib/modules/rpmb-mtk.ko
+    insmod /vendor/lib/modules/miev.ko
+    insmod /vendor/lib/modules/mitee.ko
+    insmod /vendor/lib/modules/teeperf.ko
+    insmod /vendor/lib/modules/mcDrvModule.ko
+    insmod /vendor/lib/modules/ffa_v11.ko
+    insmod /vendor/lib/modules/sec-rng.ko
+    insmod /vendor/lib/modules/mtk-pmic-keys.ko
+    insmod /vendor/lib/modules/mtk-kpd.ko
+    insmod /vendor/lib/modules/regulator-vibrator.ko
+
+on fs
+    wait /dev/block/bootdevice/by-name/userdata
+    wait /dev/block/bootdevice/by-name/metadata
+
+on init
+    setprop sys.usb.configfs 1
+    setprop sys.usb.controller "musb-hdrc"
+    setprop sys.usb.ffs.aio_compat 0
